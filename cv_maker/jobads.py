@@ -77,6 +77,23 @@ def page_text(html: str) -> str:
     return _clean(f"{title}\n\n{text}") if title and title not in text[:200] else text
 
 
+def download(url: str, max_bytes: int = MAX_BYTES, timeout: int = 20, accept: str = "*/*") -> tuple[bytes, str]:
+    """Fetch a public web address: (content, content type). Never this computer or the local network."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname or not _public_host(parsed.hostname):
+        raise AIError("That link doesn't point to a public website.")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (CV Maker)", "Accept": accept})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            if not _public_host(urlparse(res.geturl()).hostname or ""):
+                raise AIError("That link doesn't point to a public website.")
+            return res.read(max_bytes), res.headers.get("Content-Type", "")
+    except urllib.error.HTTPError as e:
+        raise AIError(f"The site refused the request ({e.code}).") from e
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+        raise AIError("Couldn't open that link.") from e
+
+
 def fetch_job_ad(url: str) -> str:
     url = (url or "").strip()
     parsed = urlparse(url)

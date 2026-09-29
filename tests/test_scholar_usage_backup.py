@@ -19,14 +19,21 @@ AUTHORS = {"results": [
      "last_known_institutions": [{"display_name": "The Chinese University of Hong Kong"}],
      "topics": [{"display_name": "Exposome"}, {"display_name": "Environmental epidemiology"}]},
 ]}
-WORKS_RECENT = {"results": [{"display_name": "Exposome-wide association of air pollution", "publication_year": 2025,
+WORKS_RECENT = {"results": [{"id": "https://openalex.org/W1", "display_name": "Exposome-wide association of air pollution",
+                             "publication_year": 2025,
                              "primary_location": {"source": {"display_name": "Environment International"}},
                              "abstract_inverted_index": {"We": [0], "study": [1], "exposures.": [2]}, "cited_by_count": 3}]}
-WORKS_CITED = {"results": [{"display_name": "A classic cohort", "publication_year": 2015, "cited_by_count": 500},
+WORKS_CITED = {"results": [{"id": "https://openalex.org/W2", "display_name": "A classic cohort", "publication_year": 2015,
+                             "cited_by_count": 500, "doi": "https://doi.org/10.1/classic"},
                            {"display_name": "Exposome-wide association of air pollution", "publication_year": 2025}]}
 
 
-def fake_get(path, params):
+def fake_get(path, params, base=scholar.API, body=None):
+    if base == scholar.S2_API:
+        return [{"abstract": "Abstract from S2.", "tldr": {"text": "They did X."},
+                 "openAccessPdf": {"url": "https://example.org/paper.pdf"}}]
+    if base == scholar.CROSSREF_API:
+        return {"message": {"abstract": "<jats:p>From Crossref.</jats:p>"}}
     if path == "/authors":
         return AUTHORS
     if path.startswith("/authors/"):
@@ -68,14 +75,64 @@ def test_professor_email_uses_their_papers(tmp_path, openalex):
     assert chosen["name"] == "Jane Wong"
     assert c.get(f"/api/versions/{vid}/professor").get_json()["professor"]["id"] == "A222"
     assert c.get("/api/state").get_json()["versions"][0]["supervisor"] == "Jane Wong"
+    reads = []
+    c.application.config["READ_PAPER"] = lambda w: reads.append(w["id"]) or (
+        {"introduction": "We ask why.", "conclusion": "Open: long-term effects.", "url": w["pdf_url"]} if w["id"] == "W2" else {})
+    # The AI picks the paper closest to the student's work...
+    ai.pick = "W2"
     email = c.post(f"/api/versions/{vid}/supervisor-email", json={"interest": "Air pollution and health"}).get_json()
     about, university, programme, supervisor = ai.supervisor_args
     assert "Exposome-wide association of air pollution" in about and supervisor == "Jane Wong"
-    assert email["fit"] == "partial" and email["paper"] == "A paper" and email["overlap"] == "Both use R"
-    # What draws the student to them is remembered for rewrites, alongside a one-off instruction.
-    c.post(f"/api/versions/{vid}/supervisor-email", json={"instruction": "Shorter"})
-    assert ai.supervisor_extra == ("Air pollution and health", "Shorter")
+    assert email["fit"] == "strong" and email["overlap"] == "Both study exposures"
+    assert email["paper"]["title"] == "A classic cohort" and email["paper"]["read"] == "full"
+    assert email["paper"]["link"] == "https://doi.org/10.1/classic"
+    assert "Open: long-term effects." in ai.paper and "They did X." in ai.paper
+    # ...rewrites keep the student's words, and a paper they choose skips the matching step.
+    matched = ai.matched
+    c.post(f"/api/versions/{vid}/supervisor-email", json={"instruction": "Shorter", "paper_id": "W2"})
+    assert ai.supervisor_extra == ("Air pollution and health", "Shorter") and ai.matched == matched
+    assert reads == ["W2"]  # each paper is downloaded once
+    email = c.post(f"/api/versions/{vid}/supervisor-email", json={"paper_id": "W1"}).get_json()
+    assert email["paper"]["read"] == "abstract" and "Exposome-wide" in ai.paper
     assert c.post("/api/versions/general/professor", json={"id": "A222"}).status_code == 404
+
+
+def test_missing_abstracts_are_filled_from_other_sources(openalex):
+    p = scholar.research_profile("A222")
+    classic = scholar.find_work(p, "W2")
+    assert classic["abstract"] == "Abstract from S2." and classic["abstract_source"] == "Semantic Scholar"
+    assert classic["tldr"] == "They did X." and classic["pdf_url"] == "https://example.org/paper.pdf"
+    assert scholar.find_work(p, "W1")["abstract_source"] == "OpenAlex"
+
+
+def test_crossref_fills_what_semantic_scholar_lacks(monkeypatch):
+    def no_s2(path, params, base=scholar.API, body=None):
+        if base == scholar.S2_API:
+            return [None]
+        return {"message": {"abstract": "<jats:title>Abstract</jats:title><jats:p>From Crossref.</jats:p>"}}
+    monkeypatch.setattr(scholar, "_get", no_s2)
+    works = [{"doi": "10.1/x", "abstract": "", "abstract_source": "", "tldr": "", "pdf_url": ""}]
+    scholar.fill_abstracts(works)
+    assert works[0]["abstract"] == "From Crossref." and works[0]["abstract_source"] == "Crossref"
+
+
+def test_key_passages_find_introduction_and_conclusion():
+    text = ("Title\nAbstract\nShort.\n1. Introduction\nWhy this matters.\n2. Methods\nWe did things.\n"
+            "5. Conclusions\nIt works; open question remains.\nReferences\n[1] Someone.")
+    p = scholar.key_passages(text)
+    assert p["introduction"].startswith("Why this matters.")
+    assert p["conclusion"] == "It works; open question remains."
+
+
+def test_read_paper_uses_a_free_copy(monkeypatch):
+    import cv_maker.jobads as jobads
+    import cv_maker.backend as backend
+    monkeypatch.setattr(jobads, "download", lambda url, *a, **k: (b"%PDF-1.4 x", "application/pdf"))
+    long = "Intro\nIntroduction\n" + "Background words. " * 200 + "\nDiscussion\nWhat is left open.\nReferences\n"
+    monkeypatch.setattr(backend, "pdf_to_text", lambda data: long)
+    got = scholar.read_paper({"pdf_url": "https://example.org/p.pdf", "oa_url": ""})
+    assert got["conclusion"] == "What is left open." and got["url"] == "https://example.org/p.pdf"
+    assert scholar.read_paper({"pdf_url": "", "oa_url": ""}) == {}
 
 
 def test_supervisor_prompt_is_honest_about_fit():

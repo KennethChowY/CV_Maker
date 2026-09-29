@@ -74,10 +74,18 @@ class FakeAI:
         self.follow_up_args = (company, role, days, notes)
         return Email(subject=f"{role} application", body=f"Dear {company}, it's been {days} days.")
 
-    def supervisor_email(self, memory, target, university, programme, supervisor="", interest="", instruction=""):
+    def match_paper(self, memory, research, interest=""):
+        from cv_maker.assistant import PaperMatch
+        self.matched = getattr(self, "matched", 0) + 1
+        return PaperMatch(their_focus="Air pollution", overlap="Both study exposures", fit="strong",
+                          paper_id=getattr(self, "pick", ""))
+
+    def supervisor_email(self, memory, target, university, programme, supervisor="", interest="", instruction="",
+                         paper=""):
         from cv_maker.assistant import SupervisorEmail
         self.supervisor_args = (target, university, programme, supervisor)
         self.supervisor_extra = (interest, instruction)
+        self.paper = paper
         return SupervisorEmail(subject="Prospective PhD student", body=f"Dear {supervisor or 'Professor'},",
                                fit="Partial", paper="A paper", overlap="Both use R")
 

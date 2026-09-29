@@ -149,15 +149,15 @@ function applyPageSize(size) {
 
 const SECTION_LABELS = {
   experience: "Experience", education: "Education", projects: "Projects",
-  achievements: "Publications, certifications & awards",
+  achievements: "Publications, awards, certifications & service",
 };
-const ADD_LABELS = { experience: "job or role", education: "school or degree", projects: "project", achievements: "publication, award…" };
+const ADD_LABELS = { experience: "job or role", education: "school or degree", projects: "project", achievements: "publication, award, service…" };
 
 // [field, label, type, options/placeholder]. type: text (default), select, textarea, lines, csv
 const FIELDS = {
   experience: [
     ["role", "Job title"], ["organization", "Organisation (company, lab, department)"],
-    ["kind", "Type", "select", ["work", "internship", "volunteering", "freelance", "other"]],
+    ["kind", "Type", "select", ["work", "internship", "research", "teaching", "volunteering", "freelance", "other"]],
     ["location", "Location"], ["start", "Start", "text", "e.g. 2024-07"], ["end", "End", "text", "e.g. 2025-06 or Present"],
     ["description", "Short description", "textarea"],
     ["highlights", "What you did and achieved (one per line)", "lines"],
@@ -168,17 +168,19 @@ const FIELDS = {
     ["institution", "Institution"], ["location", "Location"],
     ["start", "Start", "text", "e.g. 2021-09"], ["end", "End", "text", "e.g. 2025-06"],
     ["grade", "Grade or GPA", "text", "e.g. 3.6/4.0"],
+    ["thesis", "Final-year project or thesis (title, and supervisor)", "text", "e.g. Exposome-wide association of … (Supervisor: Prof. …)"],
     ["highlights", "Details (one per line): coursework, honours…", "lines"],
   ],
   projects: [
-    ["name", "Project name"], ["role", "Your role (optional)"], ["link", "Link (optional)"],
+    ["name", "Project name"], ["kind", "Type", "select", ["personal", "research", "course", "other"]],
+    ["role", "Your role (optional)"], ["link", "Link (optional)"],
     ["start", "Start", "text", "e.g. 2025-01"], ["end", "End", "text", "e.g. 2025-06 or Present"],
     ["description", "Short description", "textarea"],
     ["highlights", "What you did and achieved (one per line)", "lines"],
     ["skills", "Skills and tools used (comma separated)", "csv"],
   ],
   achievements: [
-    ["title", "Title"], ["kind", "Type", "select", ["publication", "talk", "certification", "award", "other"]],
+    ["title", "Title"], ["kind", "Type", "select", ["publication", "talk", "certification", "award", "service", "other"]],
     ["issuer", "Issuer, journal or venue"], ["date", "Date", "text", "e.g. 2025-03"],
     ["description", "Description", "textarea"],
   ],

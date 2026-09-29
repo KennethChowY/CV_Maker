@@ -28,6 +28,7 @@ PURPOSES = {
     "InterviewPrep": "Interview prep",
     "Email": "Emails",
     "SupervisorEmail": "Emails to professors",
+    "PaperMatch": "Emails to professors",
     "LinkedInProfile": "LinkedIn text",
     "CVDocument": "Translation",
 }

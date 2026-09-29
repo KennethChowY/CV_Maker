@@ -120,16 +120,29 @@ It can use either:
 - **PhD applications.** In **New application**, choose *A PhD, master's by
   research or research position*. You get an academic CV (Education first, then
   Research Experience, Publications & Presentations, Teaching Experience, Awards &
-  Scholarships), research-focused wording, a **statement of purpose** instead of
+  Scholarships, Professional Service, then other projects and experience),
+  research-focused wording, a **statement of purpose** instead of
   a cover letter, and PhD-style interview prep. Paste the programme page or the
-  lab's research as its description.
+  lab's research as its description. In the Memory tab: put your final-year
+  project or thesis in its degree's *Final-year project or thesis* field (it
+  becomes one line under the degree); mark research projects as *research* so
+  academic CVs list them under Research Experience, while personal projects stay
+  in a short Projects section; and add reviewing, organising, mentoring or
+  outreach as achievements of type *service*.
 - **Email a professor.** In the Applications tab, **Email a professor**: type
   their name and university and the app finds them in
   [OpenAlex](https://openalex.org), a free, open index of academic papers. Pick
   the right person (names clash, so it shows their university, topics and paper
-  count), see their recent and most-cited papers, then **Draft the email**: a
-  short first email that mentions one of their papers and connects it to your
-  own work, asks if they're taking PhD students, and mentions your CV. It's
+  count) and see their recent and most-cited papers with abstracts (missing
+  abstracts are filled in from Semantic Scholar and Crossref). Pick the paper to
+  mention, or let the AI choose the one closest to your work. If the paper is
+  free to read, the app downloads it and reads its introduction and conclusion,
+  so the email can mention a real finding or an open question. It also rates
+  how well you fit (strong, partial or weak) and says so honestly instead of
+  inventing a link. Add a sentence on what draws you to their work for a much
+  more personal email. The draft shows which paper it used and what it read
+  (full text, abstract only or title only), with a link to skim it before you
+  send; **Rewrite** takes instructions like "warmer" or "shorter". It's
   saved as a PhD application with an academic CV, so you can track it.
 - **Interview prep.** Open an application and go to **Interview prep** for the
   8-10 questions you're most likely to be asked for that job, with talking points
@@ -289,7 +302,8 @@ Everything is stored as plain files in the data directory:
 `data/` is in `.gitignore` so personal details aren't committed by accident.
 Back it up, or point `--data` at a private folder or repository.
 
-Looking up a professor sends their name to OpenAlex, and **Get the ad from
+Looking up a professor sends their name to OpenAlex (and their papers' DOIs to
+Semantic Scholar and Crossref), and **Get the ad from
 this link** fetches that page; nothing about you is sent. With the local model,
 nothing else leaves your computer. With an API key, your memory
 and any files you attach are sent to that service when you add something or

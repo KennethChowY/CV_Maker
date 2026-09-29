@@ -206,6 +206,34 @@ def follow_up_prompt(memory_json: str, company: str, role: str, days: int, notes
             f"<memory>\n{memory_json}\n</memory>\n\nCompany: {company or 'not given'}\nRole: {role or 'not given'}")
 
 
+class PaperMatch(BaseModel):
+    their_focus: str = Field("", description="One plain sentence: what this professor's research is about")
+    overlap: str = Field("", description="The most genuine link between the student's real experience and "
+                                         "this research, in one sentence; say plainly if there is little")
+    fit: str = Field("", description="strong | partial | weak")
+    paper_id: str = Field("", description="The id in [brackets] of the ONE paper closest to the student's work")
+
+
+MATCH_SYSTEM = """\
+A prospective PhD student wants to email a professor. Read the professor's research (topics and
+papers, each with an id in [brackets]) and the student's career memory, then:
+- `their_focus`: what the professor's research is about, in one plain sentence.
+- `overlap`: the most genuine link between the student's REAL experience and that research: a shared
+  question, data type, method or tool. Be honest: both "using data" is not a link.
+- `fit`: "strong" if the student already works in the same area; "partial" if they share methods or
+  questions but not the field; "weak" if there's little real connection.
+- `paper_id`: the ONE paper closest to the student's own work or stated interest, looking at recent
+  AND most-cited papers, not simply the newest. Prefer papers with an abstract.
+"""
+
+
+def match_prompt(memory_json: str, research: str, interest: str) -> tuple[str, str]:
+    user = f"<memory>\n{memory_json}\n</memory>\n\n<professor_research>\n{research}\n</professor_research>"
+    if interest.strip():
+        user += f"\n\nWhat draws the student to this professor's work, in their own words: {interest.strip()}"
+    return MATCH_SYSTEM, user
+
+
 class SupervisorEmail(BaseModel):
     """Filled in order: the model judges the fit and picks the paper before it writes."""
     their_focus: str = Field("", description="One plain sentence: what this professor's research is about")
@@ -266,9 +294,15 @@ Style:
 
 
 def supervisor_prompt(memory_json: str, target: str, university: str, programme: str,
-                      supervisor: str, interest: str = "", instruction: str = "") -> tuple[str, str]:
+                      supervisor: str, interest: str = "", instruction: str = "", paper: str = "") -> tuple[str, str]:
     about = target.strip() or "(No description of their research was given.)"
     extra = f"\nThe student's instruction for this draft: {instruction.strip()}" if instruction.strip() else ""
+    if paper.strip():
+        extra = ("\nThe paper to mention has already been chosen: it's in <chosen_paper>, with what's known "
+                 "about it (possibly passages from its introduction and conclusion). Put its title in `paper`. "
+                 "Say something specific and accurate about it: a finding, the approach, or a question the "
+                 "authors leave open that the student could help with." + extra)
+        about += f"\n\n<chosen_paper>\n{paper.strip()}\n</chosen_paper>"
     user = (f"<memory>\n{memory_json}\n</memory>\n\n<professor_and_programme>\n{about}\n</professor_and_programme>\n\n"
             f"Professor: {supervisor or 'not given (use Dear Professor [name])'}\n"
             f"University: {university or 'not given'}\nProgramme: {programme or 'not given'}")

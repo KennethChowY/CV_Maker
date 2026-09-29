@@ -38,12 +38,14 @@ from .assistant import (
     Email,
     InterviewPrep,
     LinkedInProfile,
+    PaperMatch,
     StrengthenQuestions,
     SupervisorEmail,
     TruthReport,
     follow_up_prompt,
     interview_prompt,
     linkedin_prompt,
+    match_prompt,
     strengthen_prompt,
     supervisor_prompt,
     translate_prompt,
@@ -66,7 +68,11 @@ item, even if held at the same time. Never move highlights from one item to anot
 - Personal, school and hobby projects go in `upsert_projects`, not experience. Papers, posters \
 and talks go in `upsert_achievements` with kind "publication" or "talk". Research roles (research \
 assistant, lab work, thesis research) get experience kind "research"; teaching assistant or \
-tutoring roles get kind "teaching".
+tutoring roles get kind "teaching". A final-year project, capstone or thesis goes in its degree's \
+`thesis` field (title and supervisor); if it was real research, also add it as a project with kind \
+"research". Other research outside a job is a project with kind "research". Peer reviewing, \
+organising events or seminars, committees, mentoring, outreach and society roles are achievements \
+with kind "service".
 - Text in square brackets that is an unfilled template gap, like [month year] or [rating], is \
 not a fact: leave it out and ask for the real value in `questions`.
 - When a new role replaces an old one (a promotion or new job), also upsert the old role with its end date.
@@ -291,10 +297,14 @@ class ChatBackend:
     def interview_prep(self, memory: Memory, target: str, company: str, role: str, kind: str = "job") -> InterviewPrep:
         return self._chat(*interview_prompt(_compact(memory), target, company, role, kind), InterviewPrep)
 
+    def match_paper(self, memory: Memory, research: str, interest: str = "") -> PaperMatch:
+        return self._chat(*match_prompt(_compact(memory), research, interest), PaperMatch)
+
     def supervisor_email(self, memory: Memory, target: str, university: str, programme: str,
-                         supervisor: str = "", interest: str = "", instruction: str = "") -> SupervisorEmail:
+                         supervisor: str = "", interest: str = "", instruction: str = "",
+                         paper: str = "") -> SupervisorEmail:
         return self._chat(*supervisor_prompt(_compact(memory), target, university, programme, supervisor,
-                                             interest, instruction), SupervisorEmail)
+                                             interest, instruction, paper), SupervisorEmail)
 
     def follow_up_email(self, memory: Memory, company: str, role: str, days: int, notes: str = "") -> Email:
         return self._chat(*follow_up_prompt(_compact(memory), company, role, days, notes), Email)

@@ -337,8 +337,31 @@ const FIT_NOTES = {
   weak: "Weak match: their research is quite far from your experience, so the email can't honestly claim a close link. Check it's the right person, tell the app what draws you to their work, or consider a professor closer to what you've done.",
 };
 
+const READ_LABELS = {
+  full: "Read: abstract, introduction and conclusion (free copy found)",
+  abstract: "Read: abstract only (no free copy of the full paper)",
+  title: "Read: title only (no abstract available). Check the email doesn't claim more than the title says.",
+};
+
+function paperCard(paper) {
+  const card = el("details", "paper-card");
+  const summary = el("summary");
+  summary.append(el("span", "field-label", "The paper it mentions"));
+  const title = el(paper.link ? "a" : "strong", "paper-title", paper.title || "(none)");
+  if (paper.link) { title.href = paper.link; title.target = "_blank"; title.rel = "noopener"; }
+  summary.append(title);
+  if (paper.year || paper.venue) summary.append(el("span", "hint", ` · ${[paper.year, paper.venue].filter(Boolean).join(", ")}`));
+  card.append(summary);
+  if (paper.read) card.append(el("div", `read-note ${paper.read}`, READ_LABELS[paper.read]));
+  if (paper.tldr) card.append(el("p", "", `In one sentence: ${paper.tldr}`));
+  if (paper.abstract) card.append(el("p", "abstract", paper.abstract));
+  card.append(el("p", "hint", "Skim it before you send: if they reply, you'll want to talk about it."));
+  return card;
+}
+
 async function draftSupervisorEmail(v, options = {}) {
-  const email = await withBusy(busyText("Drafting an email to your potential supervisor…"),
+  const email = await withBusy(busyText(options.paper_id ? "Reading the paper and drafting your email…"
+                                                         : "Choosing the paper closest to your work and drafting your email…"),
                                () => api("POST", `/api/versions/${v.id}/supervisor-email`, options));
   if (!email) return;
   const notes = [];
@@ -346,19 +369,27 @@ async function draftSupervisorEmail(v, options = {}) {
     const fit = el("div", `fit-note ${email.fit}`);
     fit.append(el("strong", "", FIT_NOTES[email.fit]));
     if (email.overlap) fit.append(el("div", "", `The link: ${email.overlap}`));
-    if (email.paper) fit.append(el("div", "", `Paper it mentions: “${email.paper}”`));
     notes.push(fit);
   }
+  if (email.paper?.title) notes.push(paperCard(email.paper));
   const instruction = el("input");
-  instruction.placeholder = "Change something? e.g. \"warmer\", \"mention I want to learn MRI methods\", \"use a different paper\"";
+  instruction.placeholder = "Change something? e.g. \"warmer\", \"shorter\", \"mention I'd like to learn their methods\"";
   const rewrite = el("div", "rewrite");
   rewrite.append(instruction);
+  const paperId = email.paper?.id || "";
+  const extras = [{ label: "Rewrite", title: "Write a new draft about the same paper, following your instruction if you gave one",
+                    onClick: () => { $("modal").close(); draftSupervisorEmail(v, { instruction: instruction.value, paper_id: paperId }); return false; } }];
+  if (paperId) {
+    extras.unshift({ label: "Change paper", onClick: async () => {
+      const { professor } = await api("GET", `/api/versions/${v.id}/professor`);
+      showProfessor(v, professor, paperId);
+      return false;
+    } });
+  }
   emailDialog(`Email to a potential supervisor: ${v.name}`, email,
               "Read it through and make it yours: fill in anything in [square brackets], attach your academic CV (Download PDF on the CV tab), and send it from your university email if you have one. If there's no reply in two weeks, one polite follow-up is fine.",
               { label: "Done", primary: true },
-              { before: notes, after: [rewrite],
-                extra: { label: "Rewrite", title: "Write a new draft, following your instruction if you gave one",
-                         onClick: () => { $("modal").close(); draftSupervisorEmail(v, { instruction: instruction.value }); return false; } } });
+              { before: notes, after: [rewrite], extra: extras });
 }
 
 function emailDialog(title, email, tipText, finalAction, more = {}) {
@@ -370,10 +401,10 @@ function emailDialog(title, email, tipText, finalAction, more = {}) {
   const field = (label, input) => { const l = el("label", "field"); l.append(el("span", "field-label", label), input); return l; };
   const tip = el("p", "hint", tipText);
   openModal(title, [...(more.before || []), field("Subject", subject), field("Email", body), ...(more.after || []), tip], [
-    ...(more.extra ? [more.extra] : []),
+    ...[].concat(more.extra || []),
     { label: "Copy", onClick: (e) => { copyText(`Subject: ${subject.value}\n\n${body.value}`, e.currentTarget); return false; } },
     {
-      label: "Open in my email app",
+      label: "Open in email app",
       onClick: () => {
         window.location.href = `mailto:?subject=${encodeURIComponent(subject.value)}&body=${encodeURIComponent(body.value)}`;
         return false;
@@ -385,20 +416,31 @@ function emailDialog(title, email, tipText, finalAction, more = {}) {
 
 // ---------- Email a professor (PhD) ----------
 
-function paperList(title, works) {
-  const box = el("div", "papers");
-  box.append(el("h3", "", title));
-  const ul = el("ul");
-  works.forEach((w) => {
-    const li = el("li");
-    li.append(el("span", "paper-title", w.title), el("span", "hint", ` · ${[w.year, w.venue].filter(Boolean).join(", ")}`));
-    ul.append(li);
-  });
-  box.append(ul);
-  return box;
+// One choosable paper, with its abstract a click away.
+function paperOption(w, chosen) {
+  const row = el("label", "paper-option");
+  const radio = el("input");
+  radio.type = "radio";
+  radio.name = "paper";
+  radio.value = w.id;
+  radio.checked = w.id === chosen;
+  const text = el("div");
+  const head = el("div");
+  head.append(el("span", "paper-title", w.title), el("span", "hint", ` · ${[w.year, w.venue].filter(Boolean).join(", ")}`));
+  if (w.pdf_url || w.oa_url) head.append(el("span", "chip have", "free to read"));
+  text.append(head);
+  if (w.tldr || w.abstract) {
+    const more = el("details", "paper-abstract");
+    more.append(el("summary", "", "Abstract"));
+    if (w.tldr) more.append(el("p", "", `In one sentence: ${w.tldr}`));
+    if (w.abstract) more.append(el("p", "", w.abstract));
+    text.append(more);
+  }
+  row.append(radio, text);
+  return row;
 }
 
-function showProfessor(v, prof) {
+function showProfessor(v, prof, chosen = "") {
   const body = [];
   const head = el("div", "prof-head");
   head.append(el("strong", "", prof.name), el("span", "hint", ` · ${prof.institutions.join(", ")}`));
@@ -408,14 +450,29 @@ function showProfessor(v, prof) {
     prof.topics.forEach((t) => chips.append(el("span", "chip", t)));
     body.push(chips);
   }
-  if (prof.recent.length) body.push(paperList("Recent papers", prof.recent.slice(0, 6)));
-  if (prof.cited.length) body.push(paperList("Most cited", prof.cited.slice(0, 3)));
+  const papers = el("div", "paper-choice");
+  papers.append(el("div", "field-label", "Which paper should the email mention?"));
+  const auto = el("label", "paper-option");
+  const autoRadio = el("input");
+  autoRadio.type = "radio";
+  autoRadio.name = "paper";
+  autoRadio.value = "";
+  autoRadio.checked = !chosen;
+  auto.append(autoRadio, el("div", "", "Let the AI choose the one closest to my work"));
+  papers.append(auto);
+  const seen = new Set();
+  [...prof.recent, ...prof.cited].forEach((w) => {
+    if (!w.id || seen.has(w.id)) return;
+    seen.add(w.id);
+    papers.append(paperOption(w, chosen));
+  });
+  body.push(papers);
   const src = el("p", "hint");
   const a = el("a", "", "OpenAlex");
   a.href = prof.source;
   a.target = "_blank";
   a.rel = "noopener";
-  src.append("From ", a, ", an open index of academic papers. Not who you meant? Search again.");
+  src.append("Papers from ", a, "; missing abstracts are filled in from Semantic Scholar and Crossref. If a free copy exists, the app reads the chosen paper's introduction and conclusion too. Not who you meant? Search again.");
   body.push(src);
   const interest = el("textarea");
   interest.rows = 3;
@@ -428,7 +485,12 @@ function showProfessor(v, prof) {
   openModal(`Email a professor: ${v.name}`, body, [
     { label: "Search again", onClick: () => { professorSearch(v, prof.name); return false; } },
     { label: "Draft the email", primary: true, disabled: !state.ai_enabled,
-      onClick: () => { $("modal").close(); draftSupervisorEmail(v, { interest: interest.value }); return false; } },
+      onClick: () => {
+        const pick = papers.querySelector("input[name=paper]:checked")?.value || "";
+        $("modal").close();
+        draftSupervisorEmail(v, { interest: interest.value, paper_id: pick });
+        return false;
+      } },
   ]);
 }
 

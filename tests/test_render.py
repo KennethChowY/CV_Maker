@@ -124,3 +124,28 @@ def test_pdf_page_runs_the_same_line_tightening():
     letter = page_document("<p>x</p>", title="t", template="classic", accent="#1f4e79", page_size="letter",
                            scale=1.0, paginate=False)
     assert "CVLayout.paginate(cv" not in letter and "width: 215.9mm" in letter
+
+
+def test_academic_cv_places_thesis_research_projects_and_service():
+    from cv_maker.render import assemble_cv
+    from cv_maker.schema import Achievement, Education, Experience, Memory, Project
+
+    m = Memory(
+        experience=[Experience(id="a", role="Research Assistant", organization="C-FIST Lab", start="2025")],
+        education=[Education(id="e", institution="UCLA", qualification="BS", field="Data Theory",
+                             thesis="Air pollution ExWAS (Supervisor: Prof. X)", highlights=["Coursework: ML"])],
+        projects=[Project(id="bot", name="Showdown bot"), Project(id="r", kind="research", name="Carbon study")],
+        achievements=[Achievement(id="s", kind="service", title="Organiser, data seminar")])
+    sections = {s.heading: s for s in assemble_cv(m, academic=True).sections}
+    assert sections["Education"].entries[0].bullets[0] == "Final-year project: Air pollution ExWAS (Supervisor: Prof. X)"
+    assert [e.title for e in sections["Research Experience"].entries] == ["Research Assistant", "Carbon study"]
+    assert [e.title for e in sections["Other Projects"].entries] == ["Showdown bot"]
+    assert sections["Professional Service"].items == ["Organiser, data seminar"]
+    order = list(sections)
+    assert order.index("Professional Service") < order.index("Other Projects")
+    # Job CVs keep projects together and call service "Leadership & Service".
+    job = [s.heading for s in assemble_cv(m).sections]
+    assert "Projects" in job and "Leadership & Service" in job and "Research Experience" not in job
+    # A thesis already labelled isn't labelled twice.
+    m.education[0].thesis = "Honours thesis: Air pollution"
+    assert assemble_cv(m).sections[1].entries[0].bullets[0] == "Honours thesis: Air pollution"

@@ -75,11 +75,13 @@ class Education(BaseModel):
     start: str = ""
     end: str = ""
     grade: str = ""
+    thesis: str = Field("", description="Final-year project, capstone or thesis: its title, and supervisor if known")
     highlights: list[str] = Field(default_factory=list)
 
 
 class Project(BaseModel):
     id: str = ""
+    kind: str = Field("personal", description="research | personal | course | other")
     name: str = ""
     role: str = ""
     link: str = ""
@@ -99,7 +101,7 @@ class Achievement(BaseModel):
     """Certifications, awards, publications, talks and similar one-line items."""
 
     id: str = ""
-    kind: str = Field("award", description="certification | award | publication | talk | other")
+    kind: str = Field("award", description="certification | award | publication | talk | service | other")
     title: str = ""
     issuer: str = ""
     date: str = ""

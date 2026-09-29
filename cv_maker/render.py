@@ -157,7 +157,8 @@ def _newest_first(items: list) -> list:
 
 
 ACADEMIC_ORDER = ["Education", "Research Experience", "Research Projects", "Publications & Presentations",
-                  "Teaching Experience", "Awards & Scholarships", "Projects", "Other Experience", "Experience",
+                  "Teaching Experience", "Awards & Scholarships", "Professional Service", "Projects",
+                  "Other Projects", "Other Experience", "Experience",
                   "Volunteering", "Skills", "Certifications", "Achievements", "Languages", "Interests"]
 _RESEARCH = re.compile(r"research|\blab\b|laborator|\bRA\b|thesis|scientist|fellow", re.I)
 _TEACHING = re.compile(r"teaching|tutor|\bTA\b|lecturer|instructor|demonstrator|grader", re.I)
@@ -226,6 +227,11 @@ def assemble_cv(
             named = next((d for d in details if _DEGREE.match(d.strip())), "")
             if named:
                 degree, details = named.strip(), [d for d in details if d is not named]
+        thesis = e.thesis.strip()
+        if thesis:  # one line under the degree, whatever the AI wrote for the other details
+            labelled = re.match(r"(thesis|dissertation|capstone|final[- ]year|honou?rs|senior)\b", thesis, re.I)
+            details = [thesis if labelled else f"Final-year project: {thesis}"] + \
+                      [d for d in details if thesis.lower() not in d.lower()]
         grade = e.grade.strip()
         if grade and re.fullmatch(r"[\d.]+\s*/\s*[\d.]+", grade):
             grade = f"GPA {grade}"
@@ -250,18 +256,23 @@ def assemble_cv(
             sections.append(section)
 
     project_items = [pr for pr in _newest_first(memory.projects) if keep(pr)]
+
+    def project_entry(pr) -> CVEntry:
+        return CVEntry(
+            title=pr.name,
+            subtitle=pr.role,
+            location=pr.link,
+            dates=date_range(pr.start, pr.end),
+            description="" if bullets.get(pr.id) else pr.description,
+            bullets=points(pr, pr.highlights),
+        )
+
+    research_projects = []
+    if academic:  # academic CVs file research projects with research experience, not with side projects
+        research_projects = [pr for pr in project_items if pr.kind.strip().lower() == "research"]
+        project_items = [pr for pr in project_items if pr not in research_projects]
     if project_items:
-        sections.append(CVSection(heading="Projects", entries=[
-            CVEntry(
-                title=pr.name,
-                subtitle=pr.role,
-                location=pr.link,
-                dates=date_range(pr.start, pr.end),
-                description="" if bullets.get(pr.id) else pr.description,
-                bullets=points(pr, pr.highlights),
-            )
-            for pr in project_items
-        ]))
+        sections.append(CVSection(heading="Projects", entries=[project_entry(pr) for pr in project_items]))
     if volunteering:
         sections.append(experience_section("Volunteering", volunteering))
 
@@ -275,6 +286,9 @@ def assemble_cv(
         ("Publications & Presentations", ("publication", "paper", "talk", "presentation", "poster", "conference")),
         ("Certifications", ("certification", "certificate", "license", "course")),
         ("Awards", ("award", "honour", "honor", "scholarship", "prize")),
+        ("Professional Service" if academic else "Leadership & Service",
+         ("service", "reviewing", "reviewer", "committee", "outreach", "mentoring", "membership", "organising",
+          "organizing", "leadership")),
     ]
     placed: set[int] = set()
     for heading, kinds in groups:
@@ -295,15 +309,17 @@ def assemble_cv(
         sections.append(CVSection(heading="Interests", items=[", ".join(memory.interests)]))
 
     if academic:
-        if research:
-            sections.append(experience_section("Research Experience", research))
+        if research or research_projects:
+            section = experience_section("Research Experience", research)
+            section.entries += [project_entry(pr) for pr in research_projects]
+            sections.append(section)
         if teaching:
             sections.append(experience_section("Teaching Experience", teaching))
         for s in sections:
             if s.heading == "Awards":
                 s.heading = "Awards & Scholarships"
             elif s.heading == "Projects":
-                s.heading = "Research Projects" if not research else "Projects"
+                s.heading = "Other Projects" if research or research_projects else "Projects"
         rank = {h: i for i, h in enumerate(ACADEMIC_ORDER)}
         sections.sort(key=lambda s: rank.get(s.heading, len(rank)))  # stable: unknown sections keep their order
 

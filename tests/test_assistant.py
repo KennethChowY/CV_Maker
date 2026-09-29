@@ -194,6 +194,7 @@ def test_phd_application_gets_an_academic_cv_statement_and_supervisor_email(clie
     assert ai.prep_kind == "phd"
     email = client.post(f"/api/versions/{vid}/supervisor-email").get_json()
     assert (email["subject"], email["body"], email["fit"]) == ("Prospective PhD student", "Dear Prof. Wong,", "partial")
+    assert email["paper"] == {"title": "A paper"}  # no professor looked up: the AI names the paper itself
     assert ai.supervisor_args == ("Exposome lab", "CUHK", "PhD in Epidemiology", "Prof. Wong")
 
 

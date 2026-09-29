@@ -38,7 +38,7 @@ from .assistant import ACADEMIC_GUIDANCE, LANGUAGES, REGIONS, basic_questions
 from .backup import auto_backup, backup_zip, check_folder
 from .backup import status as backup_status
 from .jobads import fetch_job_ad
-from .scholar import find_authors, profile_text, research_profile
+from .scholar import all_works, find_authors, find_work, paper_text, profile_text, read_paper, research_profile
 from .usage import UsageLog
 from .render import basic_cv, render_cv, render_letter, section_list, tidy_cv, with_photo
 from .schema import Memory
@@ -111,6 +111,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     app.config["ALLOWED_HOSTS"] = set(LOCAL_HOSTS)
     app.config["FIND_AUTHORS"] = find_authors
     app.config["RESEARCH_PROFILE"] = research_profile
+    app.config["READ_PAPER"] = read_paper
     app.test_client_class = _PageClient
     store = Store(data_dir or os.environ.get("CV_MAKER_DATA", "data"))
     models = ModelManager(store, fixed=ai, pinned=True) if ai is not _UNSET else ModelManager(store, backend=backend)
@@ -702,19 +703,41 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         ai = need_ai()
         body = request.get_json(silent=True) or {}
         info = store.version_info(vid)
+        memory = store.load_memory()
         professor = store.load_doc("professor", vid)
         interest = str(body.get("interest", professor.get("interest", "")))[:1500]
-        if professor and interest != professor.get("interest", ""):
-            store.save_doc("professor", {**professor, "interest": interest}, vid)  # remembered for rewrites
-        about = info["target"]
+        about, match, work, passages = info["target"], {}, None, {}
         if professor.get("name"):
-            about = f"{about}\n\n<their_research source=\"OpenAlex\">\n{profile_text(professor)}\n</their_research>".strip()
-        email = ai.supervisor_email(store.load_memory(), about, info["company"], info["role"],
+            research = profile_text(professor)
+            about = f"{about}\n\n<their_research source=\"OpenAlex\">\n{research}\n</their_research>".strip()
+            # The paper to write about: the one the student picked, or the closest match to their work.
+            paper_id = str(body.get("paper_id", "")).strip()
+            if not find_work(professor, paper_id):
+                found = ai.match_paper(memory, research, interest)
+                match = found.model_dump()
+                paper_id = found.paper_id.strip("[] ")
+            work = find_work(professor, paper_id) or next(iter(all_works(professor)), None)
+            if work:
+                read = professor.setdefault("papers_read", {})
+                if work["id"] not in read:  # download each open-access paper only once
+                    read[work["id"]] = app.config["READ_PAPER"](work)
+                passages = read[work["id"]]
+            professor["interest"] = interest  # remembered for rewrites
+            store.save_doc("professor", professor, vid)
+        email = ai.supervisor_email(memory, about, info["company"], info["role"],
                                     info["supervisor"] or professor.get("name", ""), interest,
-                                    str(body.get("instruction", ""))[:500])
-        fit = email.fit.strip().lower()
-        return jsonify({"subject": email.subject, "body": email.body, "paper": email.paper,
-                        "overlap": email.overlap, "their_focus": email.their_focus,
+                                    str(body.get("instruction", ""))[:500],
+                                    paper_text(work, passages) if work else "")
+        fit = (match.get("fit") or email.fit).strip().lower()
+        paper = {"title": email.paper}
+        if work:
+            link = f"https://doi.org/{work['doi']}" if work.get("doi") else work.get("oa_url") or work.get("pdf_url", "")
+            paper = {k: work.get(k, "") for k in ("id", "title", "year", "venue", "abstract", "abstract_source", "tldr")}
+            paper.update(link=link, read="full" if passages else "abstract" if work.get("abstract") else "title",
+                         read_from=passages.get("url", ""))
+        return jsonify({"subject": email.subject, "body": email.body, "paper": paper,
+                        "overlap": match.get("overlap") or email.overlap,
+                        "their_focus": match.get("their_focus") or email.their_focus,
                         "fit": fit if fit in ("strong", "partial", "weak") else ""})
 
     @app.post("/api/job-ad")
