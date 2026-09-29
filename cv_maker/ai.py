@@ -129,32 +129,37 @@ class ClaudeAI:
         return {"label": f"{self.model} (API key)", "ready": True, "message": "", "local": False}
 
     def _parse(self, *, system: str, content: list[dict], output_format, effort: str):
+        request = dict(
+            model=self.model,
+            max_tokens=16000,
+            system=system,
+            messages=[{"role": "user", "content": content}],
+            output_format=output_format,
+        )
+        # Newer models accept an effort level and automatic fallbacks; some older ones reject them.
+        extras = dict(betas=["server-side-fallback-2026-07-01"], fallbacks="default", output_config={"effort": effort})
         try:
-            response = self.client.beta.messages.parse(
-                model=self.model,
-                max_tokens=16000,
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
-                system=system,
-                messages=[{"role": "user", "content": content}],
-                output_format=output_format,
-                output_config={"effort": effort},
-            )
+            try:
+                response = self.client.beta.messages.parse(**request, **extras)
+            except anthropic.BadRequestError as e:
+                if not any(word in str(e.message).lower() for word in ("effort", "fallback", "output_config", "beta")):
+                    raise
+                response = self.client.beta.messages.parse(**request)
         except anthropic.AuthenticationError as e:
-            raise AIError("Claude rejected the API key. Check ANTHROPIC_API_KEY.") from e
+            raise AIError("Anthropic didn't accept the API key. Check it in the AI model box.") from e
         except anthropic.RateLimitError as e:
-            raise AIError("Rate limited by the Claude API. Try again in a minute.") from e
+            raise AIError("Anthropic is rate-limiting requests. Try again in a minute.") from e
         except anthropic.APIConnectionError as e:
-            raise AIError("Could not reach the Claude API. Check your connection.") from e
+            raise AIError("Couldn't reach Anthropic. Check your internet connection.") from e
         except anthropic.APIStatusError as e:
-            raise AIError(f"Claude API error ({e.status_code}): {e.message}") from e
+            raise AIError(f"Anthropic API error ({e.status_code}): {e.message}") from e
 
         if response.stop_reason == "refusal":
-            raise AIError("Claude declined this request.")
+            raise AIError("The model declined this request.")
         if response.stop_reason == "max_tokens":
             raise AIError("The response was cut off because it was too long.")
         if response.parsed_output is None:
-            raise AIError("Claude returned a response that could not be read.")
+            raise AIError("The model returned a response that could not be read.")
         return response.parsed_output
 
     def ingest(self, memory: Memory, text: str, attachments: list[Attachment] | None = None) -> IngestResult:
