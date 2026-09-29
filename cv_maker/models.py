@@ -60,11 +60,12 @@ def default_choice(backend: str | None = None, store: Store | None = None) -> di
     return {"backend": backend, "model": DEFAULT_MODEL if backend == "ollama" else ""}
 
 
-def build_ai(choice: dict, api_key: str = ""):
+def build_ai(choice: dict, api_key: str = "", cache_dir: Path | None = None):
     if choice["backend"] == "claude":
         return ClaudeAI(anthropic.Anthropic(api_key=api_key) if api_key else None)
     if choice["backend"] == "ollama":
-        return OllamaAI(model=choice["model"] or DEFAULT_MODEL)
+        cache = cache_dir / "wording_cache.json" if cache_dir else None
+        return OllamaAI(model=choice["model"] or DEFAULT_MODEL, cache_path=cache)
     return None
 
 
@@ -96,7 +97,7 @@ class ModelManager:
         key = (choice["backend"], choice["model"], hash(api_key))
         with self._lock:
             if key != self._key:
-                self._ai, self._key = build_ai(choice, api_key), key
+                self._ai, self._key = build_ai(choice, api_key, self.store.dir), key
             return self._ai
 
     def choose(self, backend: str, model: str = "") -> None:

@@ -274,3 +274,40 @@ def test_status_ready_when_model_present():
     finally:
         fake.close()
     assert status["ready"] is True and status["local"] is True and "free" in status["label"]
+
+
+def test_unchanged_entries_are_not_rewritten(memory, tmp_path):
+    first = {"headline": "Engineer", "summary": "S", "items": [
+        {"id": "exp-acme", "bullets": ["Built X for 3 teams"]}, {"id": "exp-old", "bullets": ["Interned"]}]}
+    again = {"headline": "Engineer", "summary": "S2", "items": [{"id": "exp-new", "bullets": ["Leads a team of 4"]}]}
+    fake = FakeOllama([first, again])
+    try:
+        ai = OllamaAI(host=fake.url, cache_path=tmp_path / "cache.json")
+        ai.build_cv(memory)
+        cv = ai.build_cv(memory)  # nothing changed: no model call at all
+        assert len(fake.requests) == 1
+        assert cv.sections[0].entries[0].bullets == ["Built X for 3 teams"]
+
+        memory.experience.append(Experience(id="exp-new", organization="Globex", role="Lead", start="2025"))
+        cv = ai.build_cv(memory)
+        assert len(fake.requests) == 2
+        prompt = fake.requests[1]["messages"][1]["content"]
+        assert "ONLY for these ids: exp-new" in prompt
+        bullets = {e.subtitle: e.bullets for e in cv.sections[0].entries}
+        assert bullets["Globex"] == ["Leads a team of 4"] and bullets["Acme"] == ["Built X for 3 teams"]
+        assert cv.summary == "S2"
+    finally:
+        fake.close()
+    assert fake.requests[0]["keep_alive"] == "30m"
+
+
+def test_changing_the_target_rewrites_everything(memory, tmp_path):
+    reply = {"items": [{"id": "exp-acme", "bullets": ["A"]}, {"id": "exp-old", "bullets": ["B"]}]}
+    fake = FakeOllama([reply, reply])
+    try:
+        ai = OllamaAI(host=fake.url, cache_path=tmp_path / "cache.json")
+        ai.build_cv(memory)
+        ai.build_cv(memory, "Data analyst role")
+    finally:
+        fake.close()
+    assert len(fake.requests) == 2 and "exp-acme, exp-old" in fake.requests[1]["messages"][1]["content"]

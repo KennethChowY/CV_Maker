@@ -8,6 +8,7 @@ explicitly lists in `remove_ids` are removed.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -16,6 +17,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from datetime import date
+from pathlib import Path
 
 from pydantic import Field, ValidationError
 
@@ -38,6 +40,7 @@ DEFAULT_HOST = "http://127.0.0.1:11434"
 DEFAULT_MODEL = os.environ.get("CV_MAKER_OLLAMA_MODEL", "qwen3:8b")
 DEFAULT_CONTEXT = int(os.environ.get("CV_MAKER_OLLAMA_CONTEXT", "16384"))
 REQUEST_TIMEOUT = 900  # CPU-only machines can take several minutes per request
+KEEP_LOADED = "30m"    # keep the model in memory between updates so it doesn't reload each time
 
 INGEST_SYSTEM = """\
 You keep a structured record ("memory") of a person's career, used to write their CV.
@@ -76,8 +79,8 @@ Return:
 - `headline`: a short professional title for the top of the CV (e.g. "Data Analyst"),
   based on their roles and any target.
 - `summary`: 2-3 sentences on who they are and what they offer. No cliches.
-- `items`: one entry for EVERY id in the memory's experience, education, projects and
-  achievements:
+- `items`: one entry for each id you are asked to write (listed at the end of the message),
+  from the memory's experience, education, projects and achievements:
   - `include`: false only if the item is clearly irrelevant to the target. Usually true.
   - `bullets`: 2-5 strong bullet points. Start each with an action verb (Built, Led,
     Designed, Automated...). Keep every number and specific detail from the memory.
@@ -219,8 +222,10 @@ def _attachments_as_text(attachments: list[Attachment]) -> str:
 class OllamaAI:
     local = True
 
-    def __init__(self, model: str = DEFAULT_MODEL, host: str | None = None, num_ctx: int = DEFAULT_CONTEXT):
+    def __init__(self, model: str = DEFAULT_MODEL, host: str | None = None, num_ctx: int = DEFAULT_CONTEXT,
+                 cache_path: str | Path | None = None):
         self.model = model
+        self.cache_path = Path(cache_path) if cache_path else None
         self.host = (host or os.environ.get("OLLAMA_HOST") or DEFAULT_HOST).rstrip("/")
         if "://" not in self.host:
             self.host = "http://" + self.host
@@ -265,6 +270,7 @@ class OllamaAI:
             "stream": False,
             "format": output.model_json_schema(),
             "think": False,
+            "keep_alive": KEEP_LOADED,
             "options": {"num_ctx": self.num_ctx, "temperature": 0.2},
         }
         last_error = None
@@ -353,36 +359,85 @@ class OllamaAI:
             questions=update.questions[:3],
         )
 
-    def build_cv(self, memory: Memory, target: str = "") -> CVDocument:
-        """The app lays the CV out from memory; the model only improves the wording."""
-        request = (
-            f"<target>\n{target}\n</target>\nTailor the wording and selection to this target."
-            if target.strip()
-            else "No specific target was given; aim for the strongest general CV."
-        )
-        user = f"<memory>\n{_compact(memory)}\n</memory>\n\n{request}"
-        wording = self._chat(CV_WORDING_SYSTEM.format(today=date.today().isoformat()), user, CVWording)
+    # ---- wording cache: only rewrite what changed -----------------------
 
-        known_ids = {x.id for section in (memory.experience, memory.education, memory.projects,
-                                          memory.achievements) for x in section}
-        items = [i for i in wording.items if i.id in known_ids]
-        excluded = {i.id for i in items if not i.include}
-        if excluded == known_ids:
+    def _load_cache(self) -> dict:
+        if self.cache_path and self.cache_path.exists():
+            try:
+                return json.loads(self.cache_path.read_text(encoding="utf-8"))
+            except ValueError:
+                pass
+        return {"items": {}, "overall": {}}
+
+    def _save_cache(self, cache: dict) -> None:
+        if not self.cache_path:
+            return
+        tmp = self.cache_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(cache), encoding="utf-8")
+        tmp.replace(self.cache_path)
+
+    def build_cv(self, memory: Memory, target: str = "") -> CVDocument:
+        """The app lays the CV out from memory; the model only improves the wording.
+
+        Wording for entries that haven't changed since the last build (same entry, same
+        target, same preferences, same model) is reused, so the model only writes new or
+        edited entries. That's most of the time saved on a slow computer."""
+        context = _digest(self.model, target, memory.preferences, memory.notes, CV_WORDING_SYSTEM)
+        entries = {x.id: x for section in (memory.experience, memory.education, memory.projects,
+                                           memory.achievements) for x in section}
+        entry_keys = {i: _digest(context, e.model_dump_json()) for i, e in entries.items()}
+        overall_key = _digest(context, _compact(memory))
+
+        cache = self._load_cache()
+        to_write = [i for i, k in entry_keys.items() if k not in cache["items"]]
+        overall = cache["overall"].get(overall_key)
+
+        if to_write or overall is None:
+            request = (
+                f"<target>\n{target}\n</target>\nTailor the wording and selection to this target."
+                if target.strip()
+                else "No specific target was given; aim for the strongest general CV."
+            )
+            scope = (
+                f"Return `items` ONLY for these ids: {', '.join(to_write)}. The other entries are already written."
+                if to_write else "Every entry is already written: return an empty `items` list."
+            )
+            user = f"<memory>\n{_compact(memory)}\n</memory>\n\n{request}\n{scope}"
+            wording = self._chat(CV_WORDING_SYSTEM.format(today=date.today().isoformat()), user, CVWording)
+            for item in wording.items:
+                if item.id in entry_keys:
+                    cache["items"][entry_keys[item.id]] = {"include": item.include, "bullets": item.bullets}
+            for i in to_write:  # entries the model skipped keep their own highlights
+                cache["items"].setdefault(entry_keys[i], {"include": True, "bullets": []})
+            overall = {"headline": wording.headline.strip(), "summary": wording.summary.strip(),
+                       "skills": [x for x in wording.skills if x.strip()], "advice": wording.advice[:5]}
+            cache["overall"] = {overall_key: overall}
+            # Keep only what the current memory uses, so the cache doesn't grow forever.
+            cache["items"] = {k: v for k, v in cache["items"].items() if k in set(entry_keys.values())}
+            self._save_cache(cache)
+
+        wordings = {i: cache["items"][k] for i, k in entry_keys.items()}
+        excluded = {i for i, w in wordings.items() if not w["include"]}
+        if entries and excluded == set(entries):
             excluded = set()  # never let a model empty the CV
         return assemble_cv(
             memory,
-            headline=wording.headline.strip(),
-            summary=wording.summary.strip(),
-            bullets={i.id: i.bullets for i in items if i.bullets},
+            headline=overall["headline"],
+            summary=overall["summary"],
+            bullets={i: w["bullets"] for i, w in wordings.items() if w["bullets"]},
             exclude=excluded,
-            skills=[s for s in wording.skills if s.strip()],
-            advice=wording.advice[:5],
+            skills=overall["skills"],
+            advice=overall["advice"],
         )
 
 
 def is_installed(model: str, installed: list[str]) -> bool:
     wanted = model if ":" in model else f"{model}:latest"
     return wanted in installed or model in installed
+
+
+def _digest(*parts) -> str:
+    return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()[:24]
 
 
 def _compact(memory: Memory) -> str:
