@@ -307,3 +307,29 @@ button.chip { font: inherit; font-size: 12px; }
 .onboarding .steps { padding-left: 20px; display: grid; gap: 14px; color: var(--ink); }
 .onboarding .steps li { line-height: 1.5; }
 .row.center { justify-content: flex-start; margin-top: 10px; }
+
+/* Downloads menu */
+.menu-wrap { position: relative; }
+.menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 8; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 10px 30px rgba(16, 24, 40, 0.16); padding: 4px; min-width: 280px; display: grid; }
+.menu button { border: none; background: none; text-align: left; padding: 8px 10px; border-radius: 6px; display: grid; gap: 1px; }
+.menu button:hover:not(:disabled) { background: var(--accent-soft); }
+.menu button small { color: var(--muted); font-size: 12px; }
+
+/* Compare view */
+.compare-view { margin-bottom: 16px; }
+.compare-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
+.compare-bar span { color: var(--muted); }
+.compare-stats { margin-left: 6px; }
+.legend ins, .legend del { padding: 0 4px; }
+.compare-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.compare-col { min-width: 0; overflow-x: auto; }
+.compare-label { font-weight: 600; font-size: 13px; margin: 0 0 6px 4px; }
+.compare-paper { zoom: 0.62; margin: 0; pointer-events: auto; }
+ins.diff-add { background: #d9f5e3; color: #0b5c33; text-decoration: none; border-radius: 2px; }
+del.diff-del { background: #fde2e2; color: #8a1c1c; text-decoration: line-through; border-radius: 2px; }
+.cv .diff-new-block { background: #eefaf2; box-shadow: -4px 0 0 #3fb472; }
+.cv .diff-gone-block { background: #fdf0f0; box-shadow: -4px 0 0 #d65a5a; text-decoration: line-through; color: #8a1c1c; }
+@media (max-width: 1100px) { .compare-cols { grid-template-columns: 1fr; } }
+@media print { .compare-view { display: none !important; } }

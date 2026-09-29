@@ -60,3 +60,45 @@ def test_application_downloads_are_named_after_the_company(client):
     client.post("/api/versions", json={"company": "HSBC", "role": "Analyst"})
     res = client.get("/api/export/cv.docx")
     assert "CV%20%E2%80%93%20HSBC.docx" in res.headers["Content-Disposition"]
+
+
+SAMPLE = (
+    "<header class='cv-header'><h1 class='cv-name'>Ada Lovelace</h1><p class='cv-headline'>Analyst</p>"
+    "<p class='cv-contact'><span>ada@x.com</span><span>London</span></p></header>"
+    "<section class='cv-section' data-section='experience'><h2>Experience</h2>"
+    "<div class='cv-entry'><div class='cv-entry-head'><span class='cv-entry-title'>Engineer</span>"
+    "<span class='cv-entry-dates'>2020 – Present</span></div>"
+    "<div class='cv-entry-sub'><span class='cv-entry-org'>Acme</span><span class='cv-entry-loc'>London</span></div>"
+    "<ul><li>Built X for 3 teams</li></ul></div></section>"
+    "<section class='cv-section cv-list' data-section='skills'><h2>Skills</h2><ul class='cv-items'>"
+    "<li><strong>Languages:</strong> Python</li></ul></section>"
+    "<section class='cv-section' data-section='interests' hidden><h2>Interests</h2><ul class='cv-items'><li>Chess</li></ul></section>"
+)
+
+
+def test_plain_text_download_reads_in_order(client):
+    client.post("/api/cv", json={"html": SAMPLE})
+    res = client.get("/api/export/cv.txt")
+    assert res.status_code == 200 and "CV.txt" in res.headers["Content-Disposition"]
+    text = res.get_data(as_text=True)
+    assert text.startswith("Ada Lovelace\nAnalyst\nada@x.com | London\n\nEXPERIENCE\nEngineer | 2020 – Present\nAcme, London\n- Built X for 3 teams")
+    assert "SKILLS\nLanguages: Python" in text and "Chess" not in text
+
+
+def test_other_cvs_can_be_fetched_for_comparison(client):
+    vid = client.post("/api/versions", json={"company": "Acme"}).get_json()["active"]["id"]
+    res = client.get("/api/versions/general/cv").get_json()
+    assert res["name"] == "General CV" and res["html"]
+    assert client.get(f"/api/versions/{vid}/cv").get_json()["name"] == "Acme"
+    assert client.get("/api/versions/nope-123/cv").status_code == 404
+
+
+@pytest.mark.skipif(CHROMIUM is None, reason="no Chromium available to print with")
+def test_ats_pdf_keeps_dates_next_to_titles(client, monkeypatch):
+    pymupdf = pytest.importorskip("pymupdf")
+    monkeypatch.setenv("CV_MAKER_BROWSER", str(CHROMIUM))
+    client.post("/api/cv", json={"html": SAMPLE})
+    res = client.get("/api/export/cv.pdf?style=ats")
+    assert res.status_code == 200 and "ATS-safe" in res.headers["Content-Disposition"]
+    text = "".join(page.get_text() for page in pymupdf.open(stream=res.data, filetype="pdf"))
+    assert "Engineer | 2020 – Present" in text and "Acme, London" in text

@@ -14,7 +14,15 @@ from pydantic import ValidationError
 from urllib.parse import quote
 
 from .ai import AIError, Attachment
-from .export import ExportError, docx_to_text, html_to_docx, html_to_pdf, letter_to_docx, page_document
+from .export import (
+    ExportError,
+    docx_to_text,
+    html_to_docx,
+    html_to_pdf,
+    html_to_text,
+    letter_to_docx,
+    page_document,
+)
 from .models import (
     NO_AI_MESSAGE,
     ModelManager,
@@ -504,13 +512,33 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         body = store.cv_html(store.active_version())
         if not body:
             return error("There's no CV to download yet.")
-        doc = page_document(body, title=file_name("CV", "pdf"), scale=scale_arg(), **design())
+        ats = request.args.get("style") == "ats"
+        kind = "CV (ATS-safe)" if ats else "CV"
+        options = design()
+        if ats:  # plain single column, no running headers: easiest for screening software to read
+            options.update(template="ats")
+        doc = page_document(body, title=file_name(kind, "pdf"), scale=scale_arg(), paginate=not ats, **options)
         try:
             pdf = html_to_pdf(doc)
         except ExportError as e:
             return error(str(e), 501)
         return Response(pdf, mimetype="application/pdf",
-                        headers={"Content-Disposition": attachment(file_name("CV", "pdf"))})
+                        headers={"Content-Disposition": attachment(file_name(kind, "pdf"))})
+
+    @app.get("/api/export/cv.txt")
+    def export_cv_text():
+        body = store.cv_html(store.active_version())
+        if not body:
+            return error("There's no CV to download yet.")
+        return Response(html_to_text(body), mimetype="text/plain; charset=utf-8",
+                        headers={"Content-Disposition": attachment(file_name("CV", "txt"))})
+
+    @app.get("/api/versions/<vid>/cv")
+    def version_cv(vid: str):
+        """Another CV's page, for comparing side by side."""
+        if not store.has_version(vid):
+            return error("That CV no longer exists.", 404)
+        return jsonify({"id": vid, "name": store.version_info(vid)["name"], "html": store.cv_html(vid)})
 
     @app.get("/api/export/cv.docx")
     def export_cv_docx():

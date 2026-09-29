@@ -102,12 +102,19 @@ It can use either:
   saved as PDF, to fill the memory in one go.
 - **Preferences.** Say things like *"always use UK spelling"* or *"keep it to
   one page"*. They're remembered and applied to every rebuild.
+- **Compare.** With an application's CV open, **Compare** shows it next to your
+  general CV (or any other application's), with changed wording highlighted:
+  added words in green, removed words struck through in red, and whole bullets
+  that were added or dropped marked. Check what was tailored before you send it.
 - **Downloads.** **Download PDF** saves a PDF straight away, made by the Chrome,
   Edge or Brave browser already on your computer: selectable text (which
   applicant-tracking systems need), your template, no browser header or footer.
   If none of those browsers is installed, the print dialog opens instead;
   choose *Save as PDF*. **Word** downloads a .docx for portals that ask for one.
-  Both work for the CV and the cover letter.
+  Both work for the CV and the cover letter. Under **More**, the **ATS-safe PDF**
+  is a plain single column in a standard font with dates written inline, which
+  screening software reads reliably; use it for online application portals. The
+  **Plain text** version is for forms that ask you to paste your CV.
 
 ## Setup
 

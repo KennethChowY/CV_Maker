@@ -107,7 +107,15 @@
           <div class="spacer"></div>
           <button id="discard" title="Go back to the CV as it was last generated" hidden>Undo my edits</button>
           <button id="learn" title="Update the memory with facts and wording from your manual edits" disabled>Save edits to memory</button>
-          <button id="docx" title="Download as a Word document">Word</button>
+          <button id="compare" title="See this CV next to another one, with the differences highlighted" hidden>Compare</button>
+          <div class="menu-wrap">
+            <button id="more-downloads" aria-haspopup="true" aria-expanded="false">More ▾</button>
+            <div id="downloads-menu" class="menu" role="menu" hidden>
+              <button role="menuitem" id="docx">Word (.docx)<small>For portals that ask for Word</small></button>
+              <button role="menuitem" id="pdf-ats">ATS-safe PDF<small>Plain single column that screening software reads reliably</small></button>
+              <button role="menuitem" id="txt">Plain text (.txt)<small>To paste into application forms</small></button>
+            </div>
+          </div>
           <button id="pdf" class="primary">Download PDF</button>
         </div>
 
@@ -131,7 +139,24 @@
           <div id="check-list" class="check-list"></div>
         </details>
 
-        <div class="paper-wrap">
+        <section id="compare-view" class="compare-view" hidden>
+          <div class="compare-bar">
+            <span>This CV</span>
+            <strong id="compare-this"></strong>
+            <span>compared with</span>
+            <select id="compare-other" aria-label="Compare with"></select>
+            <span id="compare-stats" class="compare-stats"></span>
+            <div class="spacer"></div>
+            <span class="legend"><ins class="diff-add">added</ins> <del class="diff-del">removed</del></span>
+            <button id="compare-close">Close</button>
+          </div>
+          <div class="compare-cols">
+            <div class="compare-col"><div class="compare-label" id="compare-left-label"></div><article id="compare-left" class="cv paper compare-paper"></article></div>
+            <div class="compare-col"><div class="compare-label" id="compare-right-label"></div><article id="compare-right" class="cv paper compare-paper"></article></div>
+          </div>
+        </section>
+
+        <div class="paper-wrap" id="paper-wrap">
           <div class="paper-frame">
             <article id="cv" class="cv paper" contenteditable="true" spellcheck="true"></article>
             <div id="page-guides" class="page-guides" aria-hidden="true"></div>
@@ -248,5 +273,6 @@
   <script src="/static/cv-layout.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/assist.js"></script>
+  <script src="/static/compare.js"></script>
 </body>
 </html>

@@ -70,6 +70,8 @@ function render(next) {
   $("cv-empty").hidden = !!cv_html;
   $("pdf").disabled = !cv_html;
   $("docx").disabled = !cv_html;
+  $("more-downloads").disabled = !cv_html;
+  $("compare").hidden = !cv_html || !state.versions.length;
   setEditStatus(cv_meta.edited ? "edited" : "clean");
 
   renderList($("advice"), state.advice);
@@ -78,6 +80,10 @@ function render(next) {
   applyDesign();
   layoutPages();
   runChecks();
+  if (!$("compare-view").hidden) {  // keep the comparison uncluttered while it's open
+    $("design-bar").hidden = true;
+    $("check-panel").hidden = true;
+  }
   renderSections();
   renderVersions();
   renderApplications();
@@ -113,9 +119,12 @@ function setEditStatus(mode) {
   const labels = {
     clean: "Click anywhere on the CV to edit it.",
     saving: "Saving edits…",
-    edited: "Edits saved. They'll be replaced on the next rebuild unless you save them to memory.",
+    edited: "Your edits are saved.",
   };
   el.textContent = labels[mode];
+  el.title = mode === "edited"
+    ? "A rebuild would replace them. Use 'Save edits to memory' to keep them for future versions."
+    : "";
   el.classList.toggle("dirty", mode !== "clean");
   $("learn").disabled = mode !== "edited" || !state?.ai_enabled;
   $("discard").hidden = mode !== "edited";
@@ -1394,6 +1403,18 @@ $("discard").addEventListener("click", async () => {
 $("backup").addEventListener("click", () => downloadFile("/api/export/backup.zip", "Packing your data…"));
 $("pdf").addEventListener("click", downloadPdf);
 $("docx").addEventListener("click", () => downloadFile("/api/export/cv.docx", "Making your Word document…"));
+$("pdf-ats").addEventListener("click", () => {
+  const scale = parseFloat(getComputedStyle($("cv")).getPropertyValue("--cv-scale")) || 1;
+  downloadFile(`/api/export/cv.pdf?style=ats&scale=${scale}`, "Making your ATS-safe PDF…");
+});
+$("txt").addEventListener("click", () => downloadFile("/api/export/cv.txt", "Making your plain-text CV…"));
+function toggleDownloads(open) {
+  $("downloads-menu").hidden = !open;
+  $("more-downloads").setAttribute("aria-expanded", String(open));
+}
+$("more-downloads").addEventListener("click", (e) => { e.stopPropagation(); toggleDownloads($("downloads-menu").hidden); });
+$("downloads-menu").addEventListener("click", () => toggleDownloads(false));
+document.addEventListener("click", (e) => { if (!e.target.closest(".menu-wrap")) toggleDownloads(false); });
 $("undo").addEventListener("click", undo);
 
 $("toggle-json").addEventListener("click", () => {

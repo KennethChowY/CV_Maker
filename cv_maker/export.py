@@ -293,3 +293,45 @@ def docx_to_text(data: bytes) -> str:
                     cells.append(cell.text)
             lines.append(" | ".join(cells))
     return "\n".join(line for line in lines if line.strip())
+
+
+# ---- plain text (for pasting into application forms) --------------------
+
+def html_to_text(body: str) -> str:
+    """The CV as plain text, in reading order, for application forms that want text."""
+    soup = BeautifulSoup(body, "html.parser")
+    for auto in soup.select("[data-auto]"):
+        auto.decompose()
+    out: list[str] = []
+    header = soup.find(class_="cv-header")
+    if header:
+        out.append(_text(header.find(class_="cv-name")))
+        if _text(header.find(class_="cv-headline")):
+            out.append(_text(header.find(class_="cv-headline")))
+        contact = [_text(s) for s in header.select(".cv-contact > span")]
+        if contact:
+            out.append(" | ".join(c for c in contact if c))
+    for sec in soup.find_all("section", class_="cv-section"):
+        if sec.has_attr("hidden"):
+            continue
+        out += ["", _text(sec.find("h2")).upper()]
+        for node in sec.find_all(["div", "p", "ul"], recursive=False):
+            classes = node.get("class") or []
+            if "cv-entry" in classes:
+                title, dates = _text(node.find(class_="cv-entry-title")), _text(node.find(class_="cv-entry-dates"))
+                org, loc = _text(node.find(class_="cv-entry-org")), _text(node.find(class_="cv-entry-loc"))
+                out.append(" | ".join(x for x in (title, dates) if x))
+                if org or loc:
+                    out.append(", ".join(x for x in (org, loc) if x))
+                if _text(node.find(class_="cv-entry-desc")):
+                    out.append(_text(node.find(class_="cv-entry-desc")))
+                out += [f"- {_text(li)}" for li in node.find_all("li")]
+                out.append("")
+            elif "cv-items" in classes:
+                out += [_text(li) for li in node.find_all("li")]
+            elif _text(node):
+                out.append(_text(node))
+    text = "\n".join(out)
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+    return text.strip() + "\n"
