@@ -120,3 +120,19 @@ def test_local_models_get_the_guided_email_and_one_repair_round(tmp_path, monkey
     assert any("Too short" in p for p in email["checks"])
     free = c.post(f"/api/versions/{vid}/supervisor-email", json={"paper_id": "W1", "style": "free"}).get_json()
     assert free["style"] == "free"
+
+
+def test_rules_fix_kenneths_cv_problems():
+    m = Memory(
+        education=[Education(id="e", qualification="Bachelor of Science in Data Theory from University of California, Los Angeles")],
+        experience=[Experience(id="a", role="Research Assistant / Data Manager", organization="C-FIST, CUHK", kind="research",
+                               highlights=["Conducted research as a Research Assistant / Data Manager at C-FIST, CUHK.",
+                                           "Managed data pipelines"])],
+        skills=[SkillGroup(category="Machine Learning", skills=["PPO", "Data Visualization & Data Analysis: Matplotlib", "ggplot2"]),
+                SkillGroup(category="Soft Skills", skills=["Collaboration"])])
+    s = {x["summary"]: x["changes"] for x in rule_suggestions(m)}
+    assert s["Split the degree into its parts"] == {"qualification": "Bachelor of Science", "field": "Data Theory",
+                                                     "institution": "University of California, Los Angeles"}
+    assert s["Remove a bullet that repeats the job title"] == {"highlights": ["Managed data pipelines"]}
+    assert s["Tidy the skills"] == {"skills": [{"category": "Machine Learning", "skills": ["PPO"]},
+                                               {"category": "Data Visualization & Data Analysis", "skills": ["Matplotlib", "ggplot2"]}]}

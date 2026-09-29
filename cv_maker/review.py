@@ -137,22 +137,54 @@ def rule_suggestions(memory: Memory) -> list[dict]:
                                   "Reviewing, organising, mentoring and outreach go under Professional Service.",
                                   {"kind": "service"}))
 
+    for e in memory.education:
+        # "Bachelor of Science in Data Theory from University of California, Los Angeles" in one field
+        m = re.match(r"(.+?)\s+in\s+(.+?)\s+(?:from|at)\s+(.+)$", e.qualification.strip())
+        if m and not e.field.strip():
+            changes = {"qualification": m.group(1).strip(), "field": m.group(2).strip()}
+            if not e.institution.strip() or e.institution.strip().lower() in m.group(3).lower():
+                changes["institution"] = m.group(3).strip()
+            out.append(suggestion("rule", "education", e, "Split the degree into its parts",
+                                  "Degree, subject and university each go on their own, so the CV lays them out properly.",
+                                  changes))
+
+    for section in ("experience", "projects"):
+        for item in getattr(memory, section):
+            role = (getattr(item, "role", "") or "").strip()
+            org = (getattr(item, "organization", "") or getattr(item, "name", "")).strip()
+            repeats = [h for h in item.highlights
+                       if len(role) > 8 and role.lower() in h.lower() and (not org or org.split(" (")[0].lower() in h.lower())]
+            if repeats:
+                out.append(suggestion("rule", section, item, "Remove a bullet that repeats the job title",
+                                      "The title and organisation are already above the bullets; use the space for what you did.",
+                                      {"highlights": [h for h in item.highlights if h not in repeats]}))
+
     out += _duplicates(memory)
 
     seen, groups, changed = set(), [], False
     for g in memory.skills:
-        kept = []
+        if re.fullmatch(r"soft skills?|interpersonal skills?", g.category.strip(), re.I):
+            changed = True  # adjectives, not evidence: committees and recruiters skip them
+            continue
+        kept, category = [], g.category
         for s in g.skills:
+            # A second group typed into the same line: "Data Visualization & Analysis: Matplotlib"
+            embedded = re.match(r"([A-Za-z][^:,]{2,40}):\s*(.+)$", s.strip())
+            if embedded:
+                groups.append({"category": category, "skills": kept})
+                kept, category, s = [], embedded.group(1).strip(), embedded.group(2).strip()
+                changed = True
             key = s.strip().lower()
             if key and key not in seen:
                 seen.add(key)
                 kept.append(s.strip())
             else:
                 changed = True
-        groups.append({"category": g.category, "skills": kept})
+        groups.append({"category": category, "skills": kept})
     if changed:
-        out.append({**suggestion("rule", "skills", None, "Remove repeated skills",
-                                 "Each skill appears once, in its first group.", {"skills": groups}), "label": "Skills"})
+        out.append({**suggestion("rule", "skills", None, "Tidy the skills",
+                                 "Each skill once, one group per line, and no 'soft skills' list (show them through what you did).",
+                                 {"skills": groups}), "label": "Skills"})
     return out
 
 

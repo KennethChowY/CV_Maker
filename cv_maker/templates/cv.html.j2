@@ -27,7 +27,7 @@
       {% if e.dates %}<span class="cv-entry-dates">{{ e.dates | mark }}</span>{% endif %}
     </div>
     {% if e.subtitle or e.location %}
-    <div class="cv-entry-sub"><span class="cv-entry-org">{{ e.subtitle | mark }}</span>{% if e.location %}<span class="cv-entry-loc">{{ e.location | mark }}</span>{% endif %}</div>
+    <div class="cv-entry-sub"><span class="cv-entry-org">{{ e.subtitle | mark }}</span>{% if e.location and (e.location | lower) not in (e.subtitle | lower) %}<span class="cv-entry-loc">{{ e.location | mark }}</span>{% endif %}</div>
     {% endif %}
     {% if e.description %}<p class="cv-entry-desc">{{ e.description | mark }}</p>{% endif %}
     {% if e.bullets %}

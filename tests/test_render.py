@@ -202,3 +202,22 @@ def test_small_academic_fixes():
                                     highlights=["Capstone: exposome data pipeline", "Dean's list"])])
     assert assemble_cv(m, academic=True).sections[0].entries[0].bullets == \
         ["Final-year project: Exposome pipeline", "Dean's list"]
+
+
+def test_own_name_is_bold_but_not_a_coauthor_with_the_same_surname():
+    from cv_maker.render import _own_name
+    assert _own_name("Kenneth CHOW (presenter), Xiaohan MO, and Alex CHOW", "Kenneth Chow") == \
+        "**Kenneth CHOW (presenter)**, Xiaohan MO, and Alex CHOW"
+    assert _own_name("Chow K, Chow A, Wong J", "Kenneth Chow") == "**Chow K**, Chow A, Wong J"
+    assert _own_name("K. Chow and A. Chow", "Kenneth Chow") == "**K. Chow** and A. Chow"
+
+
+def test_academic_cv_has_no_job_title_and_no_repeated_location():
+    from cv_maker.render import assemble_cv, render_cv
+    from cv_maker.schema import Experience, Memory
+    m = Memory(profile={"name": "K", "headline": "Data Scientist"},
+               experience=[Experience(id="a", role="RA", organization="School of Public Health, CUHK",
+                                      location="School of Public Health, CUHK")])
+    assert assemble_cv(m, academic=True).headline == ""
+    assert assemble_cv(m).headline == "Data Scientist"
+    assert "cv-entry-loc" not in render_cv(assemble_cv(m))

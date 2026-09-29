@@ -172,14 +172,29 @@ def _newest_first(items: list) -> list:
 
 
 def _own_name(authors: str, name: str) -> str:
-    """Bold the person's own name in an author list ('Chow K', 'K. Chow', 'Kenneth Chow')."""
+    """Bold the person's own name in an author list ('Chow K', 'K. Chow', 'Kenneth CHOW'), but not
+    co-authors who share the surname (so 'Alex Chow' stays plain for Kenneth Chow)."""
     words = [w for w in re.findall(r"[A-Za-z][A-Za-z'-]+", name) if len(w) > 1]
     if not words:
         return authors
-    surname = words[-1]
-    parts = re.split(r"(,\s*|;\s*|\s+and\s+|\s*&\s*)", authors)
-    return "".join(f"**{p.strip()}**" if re.search(rf"\b{re.escape(surname)}\b", p, re.I) and p.strip() else p
-                   for p in parts)
+    surname, first = words[-1], words[0] if len(words) > 1 else ""
+
+    def mine(author: str) -> bool:
+        if not re.search(rf"\b{re.escape(surname)}\b", author, re.I):
+            return False
+        if not first:
+            return True
+        rest = re.sub(rf"\b{re.escape(surname)}\b", " ", author, flags=re.I)
+        rest = re.sub(r"\([^)]*\)", " ", rest)  # e.g. "(presenter)"
+        return bool(re.search(rf"\b{re.escape(first)}\b", rest, re.I)
+                    or re.search(rf"(?<![A-Za-z]){first[0]}(?![a-z])", rest, re.I) and not re.search(r"[A-Za-z]{2,}", rest))
+
+    out = []
+    for part in re.split(r"(,\s*|;\s*|\s+and\s+|\s*&\s*)", authors):
+        lead = re.match(r"(and\s+|&\s*)?", part).group(0)
+        body = part[len(lead):]
+        out.append(f"{lead}**{body.strip()}**" if body.strip() and mine(body) else part)
+    return "".join(out)
 
 
 def citation(a, name: str = "") -> str:
@@ -394,11 +409,12 @@ def assemble_cv(
         rank = {h: i for i, h in enumerate(ACADEMIC_ORDER)}
         sections.sort(key=lambda s: rank.get(s.heading, len(rank)))  # stable: unknown sections keep their order
 
-    if academic:  # a line of research interests instead of a sales-pitch summary
+    if academic:  # a line of research interests instead of a sales-pitch summary, and no job title
         summary = summary or " · ".join(memory.research_interests)
+        headline = "-"
     return CVDocument(
         name=p.name or "Your Name",
-        headline=headline or p.headline,
+        headline="" if headline == "-" else headline or p.headline,
         contact=[x for x in (p.email, p.phone, p.location) if x],
         links=p.links,
         summary_title="Research Interests" if academic else "",
