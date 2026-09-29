@@ -58,15 +58,15 @@ def order_sections(cv: CVDocument, order: list[str]) -> CVDocument:
     return cv
 
 
-def render_letter(memory: Memory, letter, company: str = "", role: str = "") -> str:
-    """HTML for a cover letter, headed with the person's name and contact details."""
+def render_letter(memory: Memory, letter, company: str = "", role: str = "", kind: str = "job") -> str:
+    """HTML for a cover letter (or a PhD statement of purpose), headed with the person's name and contact details."""
     from datetime import date
 
     p = memory.profile
     contact = [x for x in (p.email, p.phone, p.location) if x] + [link.url for link in p.links[:2]]
     today = date.today()
     return _env.get_template("letter.html.j2").render(
-        profile=p, contact=contact, company=company, role=role, letter=letter,
+        profile=p, contact=contact, company=company, role=role, letter=letter, kind=kind,
         today=f"{today.day} {today.strftime('%B %Y')}",
     )
 
@@ -156,6 +156,21 @@ def _newest_first(items: list) -> list:
     return sorted(items, key=lambda x: (date_key(x.end or x.start), date_key(x.start)), reverse=True)
 
 
+ACADEMIC_ORDER = ["Education", "Research Experience", "Research Projects", "Publications & Presentations",
+                  "Teaching Experience", "Awards & Scholarships", "Projects", "Other Experience", "Experience",
+                  "Volunteering", "Skills", "Certifications", "Achievements", "Languages", "Interests"]
+_RESEARCH = re.compile(r"research|\blab\b|laborator|\bRA\b|thesis|scientist|fellow", re.I)
+_TEACHING = re.compile(r"teaching|tutor|\bTA\b|lecturer|instructor|demonstrator|grader", re.I)
+
+
+def _is_research(e) -> bool:
+    return e.kind.strip().lower() == "research" or bool(_RESEARCH.search(f"{e.role} {e.organization}"))
+
+
+def _is_teaching(e) -> bool:
+    return e.kind.strip().lower() == "teaching" or bool(_TEACHING.search(e.role))
+
+
 def assemble_cv(
     memory: Memory,
     *,
@@ -165,8 +180,11 @@ def assemble_cv(
     exclude: set[str] | frozenset[str] = frozenset(),
     skills: list[str] | None = None,
     advice: list[str] | None = None,
+    academic: bool = False,
 ) -> CVDocument:
-    """Lay out the memory as a CV. Optional arguments replace wording (by item id) or hide items."""
+    """Lay out the memory as a CV. Optional arguments replace wording (by item id) or hide items.
+    `academic` lays it out for PhD and research applications: education first, then research
+    experience, publications and presentations, teaching, and awards."""
     bullets = bullets or {}
     p = memory.profile
 
@@ -193,7 +211,12 @@ def assemble_cv(
         ])
 
     sections: list[CVSection] = []
-    experience = experience_section("Experience", jobs) if jobs else None
+    research, teaching = [], []
+    if academic:
+        research = [e for e in jobs if _is_research(e)]
+        teaching = [e for e in jobs if e not in research and _is_teaching(e)]
+        jobs = [e for e in jobs if e not in research and e not in teaching]
+    experience = experience_section("Other Experience" if research else "Experience", jobs) if jobs else None
 
     def education_entry(e) -> CVEntry:
         degree = ", ".join(x for x in (e.qualification, e.field) if x)
@@ -220,7 +243,8 @@ def assemble_cv(
         if education_items else None
 
     # Early-career CVs lead with education; everyone else leads with experience.
-    has_full_jobs = any(e.kind in ("work", "freelance") for e in jobs)
+    # Academic CVs always lead with education.
+    has_full_jobs = not academic and any(e.kind in ("work", "freelance") for e in jobs)
     for section in ((experience, education) if has_full_jobs else (education, experience)):
         if section:
             sections.append(section)
@@ -270,6 +294,19 @@ def assemble_cv(
     if memory.interests:
         sections.append(CVSection(heading="Interests", items=[", ".join(memory.interests)]))
 
+    if academic:
+        if research:
+            sections.append(experience_section("Research Experience", research))
+        if teaching:
+            sections.append(experience_section("Teaching Experience", teaching))
+        for s in sections:
+            if s.heading == "Awards":
+                s.heading = "Awards & Scholarships"
+            elif s.heading == "Projects":
+                s.heading = "Research Projects" if not research else "Projects"
+        rank = {h: i for i, h in enumerate(ACADEMIC_ORDER)}
+        sections.sort(key=lambda s: rank.get(s.heading, len(rank)))  # stable: unknown sections keep their order
+
     return CVDocument(
         name=p.name or "Your Name",
         headline=headline or p.headline,
@@ -281,9 +318,9 @@ def assemble_cv(
     )
 
 
-def basic_cv(memory: Memory) -> CVDocument:
+def basic_cv(memory: Memory, academic: bool = False) -> CVDocument:
     """The memory laid out without any AI polishing."""
-    cv = assemble_cv(memory)
+    cv = assemble_cv(memory, academic=academic)
     cv.advice = ["Choose an AI model to have your CV's wording polished and tailored."]
     return cv
 

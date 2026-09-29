@@ -27,15 +27,20 @@ class FakeAI:
         self.improved = (bullet, mode, target, instruction)
         return [f"{mode}: {bullet}", f"Led {bullet.lower()}", bullet]
 
-    def write_letter(self, memory, target, company, role, tone):
+    def write_letter(self, memory, target, company, role, tone, kind="job"):
         from cv_maker.writing import CoverLetter
         self.letter_args = (target, company, role, tone)
+        self.letter_kind = kind
         return CoverLetter(paragraphs=[f"I'd like to join {company or 'your team'} as {role or 'an engineer'}.",
                                        "At Acme I built X for 3 teams."])
 
-    def build_cv(self, memory, target="", conventions=""):
+    def build_cv(self, memory, target="", conventions="", academic=False):
         self.targets.append(target)
         self.conventions = conventions
+        self.academic = academic
+        if academic:
+            from cv_maker.render import assemble_cv
+            return assemble_cv(memory, academic=True)
         return CVDocument(
             name=memory.profile.name or "Nobody",
             sections=[CVSection(heading="Experience", entries=[
@@ -56,9 +61,10 @@ class FakeAI:
         return StrengthenQuestions(questions=[StrengthenQuestion(about="Acme", question="How many users?"),
                                               StrengthenQuestion(question=" ")])
 
-    def interview_prep(self, memory, target, company, role):
+    def interview_prep(self, memory, target, company, role, kind="job"):
         from cv_maker.assistant import InterviewPrep, InterviewQuestion
         self.prep_args = (target, company, role)
+        self.prep_kind = kind
         return InterviewPrep(questions=[InterviewQuestion(question=f"Why {company}?", why="Always asked",
                                                           answer=["Your mission", "My Acme work"])],
                              ask_them=["What does success look like?"])
@@ -67,6 +73,11 @@ class FakeAI:
         from cv_maker.assistant import Email
         self.follow_up_args = (company, role, days, notes)
         return Email(subject=f"{role} application", body=f"Dear {company}, it's been {days} days.")
+
+    def supervisor_email(self, memory, target, university, programme, supervisor=""):
+        from cv_maker.assistant import Email
+        self.supervisor_args = (target, university, programme, supervisor)
+        return Email(subject="Prospective PhD student", body=f"Dear {supervisor or 'Professor'},")
 
     def linkedin(self, memory, target=""):
         from cv_maker.assistant import LinkedInProfile, LinkedInRole
@@ -263,7 +274,7 @@ def test_section_layout_is_saved_and_survives_rebuilds(client, ai):
         "profile": {"name": "Ada"}, "experience": [{"id": "x", "role": "Engineer"}],
         "skills": [{"category": "Languages", "skills": ["Python"]}],
     })
-    ai.build_cv = lambda memory, target="", conventions="": CVDocument(name="Ada", sections=[
+    ai.build_cv = lambda memory, target="", conventions="", academic=False: CVDocument(name="Ada", sections=[
         CVSection(heading="Experience", items=["job"]), CVSection(heading="Skills", items=["Python"]),
     ])
     client.post("/api/build", json={})

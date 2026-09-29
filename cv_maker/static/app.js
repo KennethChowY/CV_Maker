@@ -54,7 +54,8 @@ function render(next) {
   $("add").disabled = !ai_enabled;
 
   if (document.activeElement !== $("target")) $("target").value = state.target || "";
-  $("aim-title").textContent = state.active.id === "general" ? "Aim the CV" : `Job ad for ${state.active.name}`;
+  $("aim-title").textContent = state.active.id === "general" ? "Aim the CV"
+    : state.active.kind === "phd" ? `Programme and research for ${state.active.name}` : `Job ad for ${state.active.name}`;
   $("auto").checked = !!settings.auto_rebuild;
   $("page-size-select").value = settings.page_size;
   applyPageSize(settings.page_size);
@@ -88,6 +89,7 @@ function render(next) {
   renderVersions();
   renderApplications();
   if (typeof renderLetter === "function") renderLetter();
+  if (typeof renderExtras === "function") renderExtras();
   renderMemory();
   renderHistory();
 }
@@ -621,7 +623,7 @@ async function downloadPdf() {
 
 function switchTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
-  ["cv", "letter", "applications", "memory", "history"].forEach((t) => { if ($(`tab-${t}`)) $(`tab-${t}`).hidden = t !== name; });
+  document.querySelectorAll("main > .panel").forEach((p) => { p.hidden = p.id !== `tab-${name}`; });
 }
 
 // ---------- Design, page fitting and CV check ----------
@@ -983,6 +985,8 @@ function showAppForm(show) {
   $("app-form").hidden = !show;
   if (show) {
     $("app-form").reset();
+    $("app-form").elements.region.value = state.settings.region || "";
+    if (typeof relabelAppForm === "function") relabelAppForm();
     $("app-form").elements.company.focus();
   }
 }
@@ -990,7 +994,8 @@ function showAppForm(show) {
 async function createApplication(e) {
   e.preventDefault();
   const f = $("app-form").elements;
-  const body = { company: f.company.value, role: f.role.value, link: f.link.value, target: f.target.value };
+  const body = { company: f.company.value, role: f.role.value, link: f.link.value, target: f.target.value,
+                 region: f.region.value, language: f.language.value, kind: f.kind.value, supervisor: f.supervisor.value };
   await withBusy(busyText("Creating a CV tailored to this job…"), async () => {
     const next = await api("POST", "/api/versions", body);
     showAppForm(false);
@@ -1045,6 +1050,10 @@ function renderApplications() {
     head.append(name);
     const meta = el("div", "meta");
     meta.append(`Created ${new Date(v.created).toLocaleDateString()}`);
+    if (v.kind === "phd") meta.append(" · PhD application");
+    if (v.supervisor) meta.append(` · ${v.supervisor}`);
+    if (v.region && state.regions[v.region]) meta.append(` · ${state.regions[v.region].name}`);
+    if (v.language && v.language !== "en") meta.append(` · ${state.languages[v.language]}`);
     if (v.link) {
       meta.append(" · ");
       const a = el("a", "", "Job ad");
@@ -1056,9 +1065,15 @@ function renderApplications() {
     head.append(meta);
 
     const actions = el("div", "actions");
+    const phd = v.kind === "phd";
     actions.append(button("Open CV", "small primary", () => openVersion(v.id)),
-                   button("Cover letter", "small", () => openVersion(v.id, "letter")),
-                   button("Delete", "small danger", () => deleteApplication(v)));
+                   button(phd ? "Statement" : "Cover letter", "small", () => openVersion(v.id, "letter")));
+    if (phd && typeof draftSupervisorEmail === "function") {
+      const email = button("Email a supervisor", "small", () => draftSupervisorEmail(v), "Draft a first email to a potential supervisor");
+      email.disabled = !state.ai_enabled;
+      actions.append(email);
+    }
+    actions.append(button("Delete", "small danger", () => deleteApplication(v)));
 
     const fields = el("div", "fields");
     const status = el("select");
@@ -1081,6 +1096,8 @@ function renderApplications() {
     const wrap = (label, input) => { const l = el("label", "field"); l.append(el("span", "field-label", label), input); return l; };
     fields.append(wrap("Status", status), wrap("Applied on", applied), wrap("Notes", notes));
     card.append(head, actions, fields);
+    const reminder = typeof followUpReminder === "function" ? followUpReminder(v) : null;
+    if (reminder) card.append(reminder);
     return card;
   }));
 }

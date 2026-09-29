@@ -32,6 +32,14 @@ REGIONS = {
         "Write for UK employers: British spelling; at most two pages; no photo or date of birth.")},
 }
 
+ACADEMIC_GUIDANCE = (
+    "This is an academic CV for a PhD or research application. Emphasise research: for research roles "
+    "and projects, bullets should say the research question, the methods and tools, and the findings or "
+    "outputs (datasets, software, papers, posters). The `headline` is their field, e.g. 'Data Science "
+    "Graduate, Epidemiology Research'. The `summary` is a 2-3 sentence statement of research interests "
+    "matched to the programme, not a sales pitch. Keep academic awards, scholarships, coursework and "
+    "thesis details. Plain, precise language; no marketing words.")
+
 LANGUAGES = {"en": "English", "zh-Hant": "Traditional Chinese (Hong Kong)", "zh-Hans": "Simplified Chinese"}
 
 
@@ -150,7 +158,26 @@ they could ask the interviewer.
 """ + TODAY
 
 
-def interview_prompt(memory_json: str, target: str, company: str, role: str) -> tuple[str, str]:
+PHD_INTERVIEW_SYSTEM = """\
+You prepare someone for a PhD admissions interview. Using the programme description and their
+career memory, list the 8-10 questions they're most likely to be asked: why a PhD and why this
+programme; deep questions about their past research (the question, the methods and why they
+chose them, limitations, what they'd do differently); the research they want to do; how they
+handle setbacks and work independently; and a technical or methods question for their field.
+For each, give short talking points from ONLY their real experience, with specific details and
+numbers. If the memory has no good example, say so and suggest how to answer honestly. Then
+suggest 3-4 questions to ask the potential supervisor or panel (lab culture, supervision style,
+funding, where past students went).
+
+""" + TODAY
+
+
+def interview_prompt(memory_json: str, target: str, company: str, role: str, kind: str = "job") -> tuple[str, str]:
+    if kind == "phd":
+        programme = target.strip() or "(No programme description was given.)"
+        return (PHD_INTERVIEW_SYSTEM.format(today=_today()),
+                f"<memory>\n{memory_json}\n</memory>\n\n<programme>\n{programme}\n</programme>\n\n"
+                f"University: {company or 'not given'}\nProgramme: {role or 'not given'}")
     job = target.strip() or "(No job ad was given; prepare for a typical interview for the role below.)"
     return (INTERVIEW_SYSTEM.format(today=_today()),
             f"<memory>\n{memory_json}\n</memory>\n\n<job_ad>\n{job}\n</job_ad>\n\n"
@@ -177,6 +204,30 @@ def follow_up_prompt(memory_json: str, company: str, role: str, days: int, notes
     extra = f"Their notes about this application: {notes.strip()}" if notes.strip() else ""
     return (FOLLOW_UP_SYSTEM.format(days=days, notes=extra, today=_today()),
             f"<memory>\n{memory_json}\n</memory>\n\nCompany: {company or 'not given'}\nRole: {role or 'not given'}")
+
+
+SUPERVISOR_SYSTEM = """\
+Write a short first email from a prospective PhD student to a potential supervisor. At most 200
+words. Busy academics skim, so:
+- `subject`: specific, e.g. "Prospective PhD student: exposome data science (UCLA Data Theory graduate)".
+- Open with who they are in one sentence (degree, university, current research role).
+- One or two sentences connecting their experience to the supervisor's research. Use only what the
+  given description of the supervisor's work says; if nothing is given, write a gap in square
+  brackets like [one specific paper or project of theirs] for the person to fill in.
+- Their one or two most relevant research experiences, with a concrete detail or number.
+- Ask whether the supervisor is taking new PhD students for the coming year, and mention the
+  attached CV. Sign off with their name. No flattery, no cliches.
+
+""" + TODAY
+
+
+def supervisor_prompt(memory_json: str, target: str, university: str, programme: str,
+                      supervisor: str) -> tuple[str, str]:
+    about = target.strip() or "(No description of their research was given.)"
+    return (SUPERVISOR_SYSTEM.format(today=_today()),
+            f"<memory>\n{memory_json}\n</memory>\n\n<supervisor_and_programme>\n{about}\n</supervisor_and_programme>\n\n"
+            f"Supervisor: {supervisor or 'not given (use Dear Professor [name])'}\n"
+            f"University: {university or 'not given'}\nProgramme: {programme or 'not given'}")
 
 
 # ---- LinkedIn ------------------------------------------------------------

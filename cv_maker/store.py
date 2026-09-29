@@ -31,7 +31,8 @@ _SECTIONS_WITH_IDS = ("experience", "education", "projects", "achievements")
 GENERAL = "general"
 STATUSES = ("Draft", "Applied", "Interview", "Offer", "Rejected", "Withdrawn")
 _VERSION_FIELDS = ("company", "role", "name", "target", "link", "status", "applied", "notes",
-                   "region", "language", "followed_up")
+                   "region", "language", "followed_up", "kind", "supervisor")
+KINDS = ("job", "phd")  # a job application, or a PhD / research-degree application
 
 
 def _now() -> str:
@@ -180,9 +181,11 @@ class Store:
             settings = self.load_settings()
             return {"id": GENERAL, "name": "General CV", "target": settings["target"], "company": "", "role": "",
                     "status": "", "applied": "", "link": "", "notes": "", "followed_up": "",
+                    "kind": "job", "supervisor": "", "section_order": [],
                     "region": settings["region"], "language": settings["language"]}
         info = json.loads((self._slot(vid) / "info.json").read_text(encoding="utf-8"))
-        return {"region": "", "language": "en", "followed_up": "", **info}
+        return {"region": "", "language": "en", "followed_up": "", "kind": "job", "supervisor": "",
+                "section_order": [], **info}
 
     def list_versions(self) -> list[dict]:
         if not self.versions_dir.exists():
@@ -191,7 +194,8 @@ class Store:
         return sorted(infos, key=lambda i: i.get("created", ""), reverse=True)
 
     def create_version(self, *, company: str = "", role: str = "", target: str = "", link: str = "",
-                       region: str = "", language: str = "en", copy_from: str = GENERAL) -> dict:
+                       region: str = "", language: str = "en", kind: str = "job", supervisor: str = "",
+                       copy_from: str = GENERAL) -> dict:
         slug = re.sub(r"[^a-z0-9]+", "-", f"{company} {role}".lower()).strip("-")[:40] or "application"
         vid = f"{slug}-{secrets.token_hex(3)}"
         slot = self.versions_dir / vid
@@ -205,6 +209,7 @@ class Store:
             "name": " – ".join(x for x in (role.strip(), company.strip()) if x) or "Application",
             "target": target.strip(), "link": link.strip(), "status": "Draft", "applied": "", "notes": "",
             "region": region, "language": language, "followed_up": "",
+            "kind": kind if kind in KINDS else "job", "supervisor": supervisor.strip(),
             "created": _now(), "updated": _now(),
         }
         _write_atomic(slot / "info.json", json.dumps(info, indent=2))
@@ -223,6 +228,12 @@ class Store:
         info["updated"] = _now()
         _write_atomic(self._slot(vid) / "info.json", json.dumps(info, indent=2))
         return info
+
+    def save_version_layout(self, vid: str, order: list[str]) -> None:
+        """A PhD application's own section order (academic CVs are arranged differently)."""
+        info = self.version_info(vid)
+        info["section_order"] = [str(x) for x in order]
+        _write_atomic(self._slot(vid) / "info.json", json.dumps(info, indent=2))
 
     def delete_version(self, vid: str) -> None:
         if vid == GENERAL:

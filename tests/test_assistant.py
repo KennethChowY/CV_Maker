@@ -163,3 +163,43 @@ def test_job_ad_text_prefers_structured_data():
     plain = page_text("<html><head><title>Analyst</title></head><body><nav>Menu</nav><main><h1>Analyst</h1>"
                       "<p>Do analysis</p></main><script>x()</script></body></html>")
     assert "Menu" not in plain and "x()" not in plain and "Do analysis" in plain
+
+
+def test_phd_application_gets_an_academic_cv_statement_and_supervisor_email(client, ai):
+    memory = {"profile": {"name": "Kenneth Chow"},
+              "experience": [{"id": "a", "role": "Research Assistant", "organization": "C-FIST Lab", "start": "2024"},
+                             {"id": "b", "role": "Data Analyst", "organization": "Acme", "kind": "work", "start": "2023"}],
+              "education": [{"id": "e", "institution": "UCLA", "qualification": "BS", "field": "Data Theory"}],
+              "achievements": [{"id": "p", "kind": "publication", "title": "Exposome paper"}]}
+    client.put("/api/memory?rebuild=0", json=memory)
+    assert new_app(client, kind="postdoc").status_code == 400
+    body = client.post("/api/versions", json={"company": "CUHK", "role": "PhD in Epidemiology", "kind": "phd",
+                                              "supervisor": "Prof. Wong", "target": "Exposome lab"}).get_json()
+    vid = body["active"]["id"]
+    assert body["active"]["kind"] == "phd" and ai.academic and "PhD" in ai.conventions
+    headings = [s["heading"] for s in body["sections"]]
+    assert headings[:3] == ["Education", "Research Experience", "Publications & Presentations"]
+    assert "Other Experience" in headings
+    # Its section order is its own: moving sections here leaves the general CV's order alone.
+    order = ["Research Experience", "Education", "Publications & Presentations", "Other Experience"]
+    client.post("/api/cv/layout", json={"order": order, "hidden": []})
+    state = client.get("/api/state").get_json()
+    assert [s["heading"] for s in state["sections"]][:2] == ["Research Experience", "Education"]
+    assert state["settings"]["section_order"] == []
+    # Statement of purpose instead of a cover letter.
+    body = client.post("/api/letter", json={"tone": "professional"}).get_json()
+    assert ai.letter_kind == "phd"
+    assert "Statement of Purpose" in body["letter"]["html"] and "Hiring Team" not in body["letter"]["html"]
+    client.post("/api/interview")
+    assert ai.prep_kind == "phd"
+    email = client.post(f"/api/versions/{vid}/supervisor-email").get_json()
+    assert email == {"subject": "Prospective PhD student", "body": "Dear Prof. Wong,"}
+    assert ai.supervisor_args == ("Exposome lab", "CUHK", "PhD in Epidemiology", "Prof. Wong")
+
+
+def test_statement_prompt_is_used_for_phd_letters():
+    from cv_maker.writing import letter_prompt
+    system, user = letter_prompt("{}", "Programme text", "CUHK", "PhD", "professional", "phd")
+    assert "statements of purpose" in system.lower() and "<programme>" in user
+    system, user = letter_prompt("{}", "Job text", "Acme", "Analyst", "professional")
+    assert "cover letter" in system.lower() and "<job_ad>" in user

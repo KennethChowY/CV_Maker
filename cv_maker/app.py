@@ -32,11 +32,11 @@ from .models import (
     credentials_configured,
     default_choice,
 )
-from .assistant import LANGUAGES, REGIONS, basic_questions
+from .assistant import ACADEMIC_GUIDANCE, LANGUAGES, REGIONS, basic_questions
 from .jobads import fetch_job_ad
 from .render import basic_cv, render_cv, render_letter, section_list, tidy_cv, with_photo
 from .schema import Memory
-from .store import GENERAL, STATUSES, Store
+from .store import GENERAL, KINDS, STATUSES, Store
 from .writing import IMPROVE_MODES, LETTER_TONES
 
 STATIC = Path(__file__).parent / "static"
@@ -107,9 +107,13 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     store = Store(data_dir or os.environ.get("CV_MAKER_DATA", "data"))
     models = ModelManager(store, fixed=ai, pinned=True) if ai is not _UNSET else ModelManager(store, backend=backend)
 
-    def layout() -> tuple[list[str], list[str]]:
+    def layout(vid: str | None = None) -> tuple[list[str], list[str]]:
+        """Section order and hidden sections. PhD applications keep their own order, because
+        academic CVs are arranged differently (education and research first)."""
         settings = store.load_settings()
-        return settings["section_order"], settings["hidden_sections"]
+        info = store.version_info(vid or store.active_version())
+        order = info["section_order"] if info["kind"] == "phd" else settings["section_order"]
+        return order, settings["hidden_sections"]
 
     def photo(vid: str) -> str | None:
         """The photo as a data: URI, if it's switched on and the CV's country expects one."""
@@ -123,7 +127,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         return f"data:image/{kind};base64,{base64.b64encode(path.read_bytes()).decode()}"
 
     def render(cv, vid: str) -> str:
-        return render_cv(cv, *layout(), photo=photo(vid))
+        return render_cv(cv, *layout(vid), photo=photo(vid))
 
     def translated(ai, cv, language: str, vid: str):
         """Translate the CV, reusing the last translation while the English CV is unchanged."""
@@ -143,8 +147,11 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         info = store.version_info(vid)
         memory = store.load_memory()
         ai = models.current()
-        conventions = REGIONS.get(info["region"], REGIONS[""])["guidance"]
-        cv = tidy_cv(ai.build_cv(memory, info["target"], conventions) if ai else basic_cv(memory))
+        academic = info["kind"] == "phd"
+        conventions = "\n".join(x for x in (ACADEMIC_GUIDANCE if academic else "",
+                                             REGIONS.get(info["region"], REGIONS[""])["guidance"]) if x)
+        cv = tidy_cv(ai.build_cv(memory, info["target"], conventions, academic=academic) if ai
+                     else basic_cv(memory, academic=academic))
         if ai and info["language"] in LANGUAGES and info["language"] != "en":
             cv = translated(ai, cv, info["language"], vid)
         store.save_cv(cv, render(cv, vid), info["target"], vid)
@@ -180,7 +187,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
             "cv_html": store.cv_html(vid),
             "cv_meta": store.cv_meta(vid),
             "advice": cv.advice if cv else [],
-            "sections": section_list(cv, *layout()) if cv else [],
+            "sections": section_list(cv, *layout(vid)) if cv else [],
             "letter": store.load_letter(vid),
             "ai_enabled": ai is not None,
             "regions": {k: {"name": v["name"], "photo": v["photo"]} for k, v in REGIONS.items()},
@@ -352,8 +359,12 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         order, hidden = body.get("order"), body.get("hidden")
         if not (isinstance(order, list) and isinstance(hidden, list)):
             return error("Missing section order.")
-        store.save_settings({"section_order": [str(x) for x in order], "hidden_sections": [str(x) for x in hidden]})
         vid = store.active_version()
+        if store.version_info(vid)["kind"] == "phd":
+            store.save_version_layout(vid, order)
+            store.save_settings({"hidden_sections": [str(x) for x in hidden]})
+        else:
+            store.save_settings({"section_order": [str(x) for x in order], "hidden_sections": [str(x) for x in hidden]})
         cv = store.load_cv(vid)
         if cv and store.cv_meta(vid).get("edited") and isinstance(body.get("html"), str):
             store.save_cv_edits(clean_html(body["html"]), vid)  # keep hand edits; the page already moved the sections
@@ -456,10 +467,12 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         vid = store.active_version()
         info = store.version_info(vid)
         memory = store.load_memory()
-        letter = ai.write_letter(memory, info["target"], info["company"], info["role"], tone)
+        letter = ai.write_letter(memory, info["target"], info["company"], info["role"], tone, kind=info["kind"])
         if not letter.paragraphs:
             return error("The AI didn't write a letter. Try again.", 502)
-        html = render_letter(memory, letter, info["company"], info["role"])
+        if info["kind"] == "phd":  # a statement of purpose isn't addressed or signed like a letter
+            letter.greeting = letter.closing = ""
+        html = render_letter(memory, letter, info["company"], info["role"], info["kind"])
         store.save_letter({"html": html, "tone": tone, "edited": False, "generated_at": _now_iso()}, vid)
         return state()
 
@@ -511,10 +524,12 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         if not company and not role:
             return error("Add the company or the role.")
         region, language = str(body.get("region", "")), str(body.get("language", "en"))
-        if region not in REGIONS or language not in LANGUAGES:
-            return error("Unknown country or language.")
+        kind = str(body.get("kind", "job"))
+        if region not in REGIONS or language not in LANGUAGES or kind not in KINDS:
+            return error("Unknown country, language or kind of application.")
         info = store.create_version(company=company, role=role, target=str(body.get("target", "")),
-                                    link=str(body.get("link", "")), region=region, language=language)
+                                    link=str(body.get("link", "")), region=region, language=language,
+                                    kind=kind, supervisor=str(body.get("supervisor", "")))
         store.save_settings({"active_version": info["id"]})
         try:
             build(info["id"])
@@ -529,8 +544,9 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         body = request.get_json(silent=True) or {}
         if "status" in body and body["status"] not in STATUSES:
             return error("Unknown status.")
-        if body.get("region", "") not in REGIONS or body.get("language", "en") not in LANGUAGES:
-            return error("Unknown country or language.")
+        if body.get("region", "") not in REGIONS or body.get("language", "en") not in LANGUAGES \
+                or body.get("kind", "job") not in KINDS:
+            return error("Unknown country, language or kind of application.")
         store.update_version(vid, body)
         if "region" in body:
             refresh_photos()
@@ -587,7 +603,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
             return error("Open an application first: interview prep is for a specific job.")
         ai = need_ai()
         info = store.version_info(vid)
-        prep = ai.interview_prep(store.load_memory(), info["target"], info["company"], info["role"])
+        prep = ai.interview_prep(store.load_memory(), info["target"], info["company"], info["role"], kind=info["kind"])
         if not prep.questions:
             return error("The AI didn't come up with any questions. Try again.", 502)
         store.save_doc("prep", {**prep.model_dump(), "generated_at": _now_iso()}, vid)
@@ -615,6 +631,16 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         except ValueError:
             days = 7
         email = ai.follow_up_email(store.load_memory(), info["company"], info["role"], max(days, 1), info["notes"])
+        return jsonify({"subject": email.subject, "body": email.body})
+
+    @app.post("/api/versions/<vid>/supervisor-email")
+    def supervisor_email(vid: str):
+        """For a PhD application: a first email to a potential supervisor."""
+        if vid == GENERAL or not store.has_version(vid):
+            return error("That application no longer exists.", 404)
+        ai = need_ai()
+        info = store.version_info(vid)
+        email = ai.supervisor_email(store.load_memory(), info["target"], info["company"], info["role"], info["supervisor"])
         return jsonify({"subject": email.subject, "body": email.body})
 
     @app.post("/api/job-ad")
@@ -665,6 +691,8 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
 
     def file_name(kind: str, ext: str) -> str:
         vid = store.active_version()
+        if kind == "Cover Letter" and store.version_info(vid)["kind"] == "phd":
+            kind = "Statement of Purpose"
         name = store.load_memory().profile.name.strip() or "My"
         company = store.version_info(vid)["company"] if vid != GENERAL else ""
         return f"{name} {kind}{f' – {company}' if company else ''}.{ext}"

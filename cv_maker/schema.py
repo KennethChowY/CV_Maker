@@ -52,7 +52,7 @@ class Profile(BaseModel):
 
 class Experience(BaseModel):
     id: str = Field("", description="Stable unique id, e.g. 'exp-acme-2021'. Never change an existing id.")
-    kind: str = Field("work", description="work | internship | volunteering | freelance | other")
+    kind: str = Field("work", description="work | internship | research | teaching | volunteering | freelance | other")
     organization: str = ""
     role: str = ""
     location: str = ""

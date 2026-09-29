@@ -79,14 +79,45 @@ def improve_prompt(memory_json: str, bullet: str, mode: str, target: str, instru
     return IMPROVE_SYSTEM.format(today=date.today().isoformat()), user
 
 
-def letter_prompt(memory_json: str, target: str, company: str, role: str, tone: str) -> tuple[str, str]:
-    job = target.strip() or "(No job ad was given. Write a strong general letter for the role below.)"
-    user = (
-        f"<memory>\n{memory_json}\n</memory>\n\n<job_ad>\n{job}\n</job_ad>\n\n"
-        f"Company: {company or 'not given'}\nRole: {role or 'not given'}"
-    )
-    system = LETTER_SYSTEM.format(tone=LETTER_TONES.get(tone, LETTER_TONES["professional"]),
-                                  today=date.today().isoformat())
+STATEMENT_SYSTEM = """\
+You write statements of purpose for PhD and research-degree applications. Write one for this
+person and this programme.
+
+Structure (`paragraphs`, 5-7 paragraphs, about 800-1000 words in total):
+1. The research question or area that drives them, and how they came to it: a specific moment or
+   problem from their real experience, not a childhood story.
+2-4. Their research preparation: each research role or project with the question, their methods,
+   what they found or built, and what it taught them. Name methods and tools. Keep every number.
+   Mention relevant coursework, theses, publications or presentations from the memory.
+5. Why this programme: connect their interests to what the programme description says (faculty,
+   labs, research areas). Name a potential supervisor only if one is given. Invent nothing about
+   the university.
+6. What they want to research during the PhD, and their goals after it.
+Leave `greeting` and `closing` empty.
+
+Rules:
+- Tone: {tone}, but academic: precise and modest; show thinking, not adjectives.
+- Only use facts from the memory. Where a fact the statement needs is missing, write a short gap
+  in square brackets, e.g. [the specific result of this analysis].
+- No cliches such as "ever since I was young" or "I am passionate about".
+- Follow the person's CV preferences (for example UK spelling).
+
+Today's date is {today}."""
+
+
+def letter_prompt(memory_json: str, target: str, company: str, role: str, tone: str,
+                  kind: str = "job") -> tuple[str, str]:
+    academic = kind == "phd"
+    if academic:
+        job = target.strip() or "(No programme description was given. Write a strong statement for the programme below.)"
+        user = (f"<memory>\n{memory_json}\n</memory>\n\n<programme>\n{job}\n</programme>\n\n"
+                f"University: {company or 'not given'}\nProgramme: {role or 'not given'}")
+    else:
+        job = target.strip() or "(No job ad was given. Write a strong general letter for the role below.)"
+        user = (f"<memory>\n{memory_json}\n</memory>\n\n<job_ad>\n{job}\n</job_ad>\n\n"
+                f"Company: {company or 'not given'}\nRole: {role or 'not given'}")
+    system = (STATEMENT_SYSTEM if academic else LETTER_SYSTEM).format(
+        tone=LETTER_TONES.get(tone, LETTER_TONES["professional"]), today=date.today().isoformat())
     return system, user
 
 

@@ -124,9 +124,12 @@ function renderLetter() {
   const page = $("letter");
   const active = state.active;
   const forWhom = active.id === "general" ? "your general CV" : active.name;
+  const phd = active.kind === "phd";
+  const kind = phd ? "Statement of purpose" : "Cover letter";
+  document.querySelector('.tab[data-tab="letter"]').textContent = phd ? "Statement of purpose" : "Cover letter";
   $("letter-for").textContent = letter.html
-    ? `Cover letter for ${forWhom}${letter.edited ? " · edits saved" : ""}. Click to edit.`
-    : `Cover letter for ${forWhom}`;
+    ? `${kind} for ${forWhom}${letter.edited ? " · edits saved" : ""}. Click to edit.`
+    : `${kind} for ${forWhom}`;
   if (document.activeElement !== page || page.dataset.version !== active.id) {
     if (document.activeElement === page) page.blur();
     page.innerHTML = letter.html || "";
@@ -139,10 +142,13 @@ function renderLetter() {
   else page.style.removeProperty("--cv-accent");
   page.classList.toggle("letter-us", state.settings.page_size === "letter");
   $("letter-empty").hidden = !!letter.html;
-  $("letter-empty-text").textContent = active.id === "general" && !(state.target || "").trim()
-    ? "For the best letter, create an application in the Applications tab with the job ad, then write its letter here. You can also write a general one now."
-    : `It's written from your memory and the job ad for ${forWhom}, so every claim is something you've actually done.`;
-  $("letter-write").textContent = letter.html ? "Rewrite" : "Write cover letter";
+  document.querySelector("#letter-empty h3").textContent = phd ? "No statement of purpose yet" : "No cover letter yet";
+  $("letter-empty-text").textContent = phd
+    ? `A statement of purpose for ${forWhom}, written from your memory: your research interests, your research experience with its methods and results, why this programme, and your goals. Every claim is something you've actually done; gaps are marked for you to fill in.`
+    : active.id === "general" && !(state.target || "").trim()
+      ? "For the best letter, create an application in the Applications tab with the job ad, then write its letter here. You can also write a general one now."
+      : `It's written from your memory and the job ad for ${forWhom}, so every claim is something you've actually done.`;
+  $("letter-write").textContent = letter.html ? "Rewrite" : phd ? "Write statement of purpose" : "Write cover letter";
   $("letter-write").disabled = !state.ai_enabled;
   $("letter-pdf").disabled = !letter.html;
   $("letter-docx").disabled = !letter.html;
@@ -151,7 +157,8 @@ function renderLetter() {
 
 async function writeLetter() {
   if (state.letter?.edited && !confirm("Rewriting replaces your edits to this letter. Continue?")) return;
-  await withBusy(busyText("Writing your cover letter…"), async () => {
+  const what = state.active.kind === "phd" ? "statement of purpose" : "cover letter";
+  await withBusy(busyText(`Writing your ${what}…`), async () => {
     render(await api("POST", "/api/letter", { tone: $("letter-tone").value }));
     showNotice("");
   });

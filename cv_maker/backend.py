@@ -44,6 +44,7 @@ from .assistant import (
     interview_prompt,
     linkedin_prompt,
     strengthen_prompt,
+    supervisor_prompt,
     translate_prompt,
     truth_prompt,
 )
@@ -62,7 +63,9 @@ Leave a list empty if nothing in it changed.
 - Keep separate roles separate: a different organisation, department or lab is a different \
 item, even if held at the same time. Never move highlights from one item to another.
 - Personal, school and hobby projects go in `upsert_projects`, not experience. Papers, posters \
-and talks go in `upsert_achievements` with kind "publication" or "talk".
+and talks go in `upsert_achievements` with kind "publication" or "talk". Research roles (research \
+assistant, lab work, thesis research) get experience kind "research"; teaching assistant or \
+tutoring roles get kind "teaching".
 - Text in square brackets that is an unfilled template gap, like [month year] or [rating], is \
 not a fact: leave it out and ask for the real value in `questions`.
 - When a new role replaces an old one (a promotion or new job), also upsert the old role with its end date.
@@ -262,8 +265,10 @@ class ChatBackend:
         system, user = improve_prompt(_compact(memory), bullet, mode, target, instruction)
         return clean_suggestions(self._chat(system, user, BulletSuggestions), bullet)
 
-    def write_letter(self, memory: Memory, target: str, company: str, role: str, tone: str) -> CoverLetter:
-        return self._chat(*letter_prompt(_compact(memory), target, company, role, tone), CoverLetter)
+    def write_letter(self, memory: Memory, target: str, company: str, role: str, tone: str,
+                     kind: str = "job") -> CoverLetter:
+        """A cover letter, or for a PhD application a statement of purpose."""
+        return self._chat(*letter_prompt(_compact(memory), target, company, role, tone, kind), CoverLetter)
 
     # ---- helpers beyond the CV itself (prompts in assistant.py) -----------
 
@@ -273,8 +278,12 @@ class ChatBackend:
     def strengthen_questions(self, memory: Memory, target: str = "", count: int = 6) -> StrengthenQuestions:
         return self._chat(*strengthen_prompt(_compact(memory), target, count), StrengthenQuestions)
 
-    def interview_prep(self, memory: Memory, target: str, company: str, role: str) -> InterviewPrep:
-        return self._chat(*interview_prompt(_compact(memory), target, company, role), InterviewPrep)
+    def interview_prep(self, memory: Memory, target: str, company: str, role: str, kind: str = "job") -> InterviewPrep:
+        return self._chat(*interview_prompt(_compact(memory), target, company, role, kind), InterviewPrep)
+
+    def supervisor_email(self, memory: Memory, target: str, university: str, programme: str,
+                         supervisor: str = "") -> Email:
+        return self._chat(*supervisor_prompt(_compact(memory), target, university, programme, supervisor), Email)
 
     def follow_up_email(self, memory: Memory, company: str, role: str, days: int, notes: str = "") -> Email:
         return self._chat(*follow_up_prompt(_compact(memory), company, role, days, notes), Email)
@@ -304,7 +313,7 @@ class ChatBackend:
         tmp.write_text(json.dumps(cache), encoding="utf-8")
         tmp.replace(self.cache_path)
 
-    def build_cv(self, memory: Memory, target: str = "", conventions: str = "") -> CVDocument:
+    def build_cv(self, memory: Memory, target: str = "", conventions: str = "", academic: bool = False) -> CVDocument:
         """The app lays the CV out from memory; the model only improves the wording.
 
         Wording for entries that haven't changed since the last build (same entry, same
@@ -353,6 +362,7 @@ class ChatBackend:
             excluded = set()  # never let a model empty the CV
         return assemble_cv(
             memory,
+            academic=academic,
             headline=overall["headline"],
             summary=overall["summary"],
             bullets={i: w["bullets"] for i, w in wordings.items() if w["bullets"]},

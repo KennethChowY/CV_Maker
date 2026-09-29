@@ -15,6 +15,8 @@
       <button class="tab active" data-tab="cv" role="tab">CV</button>
       <button class="tab" data-tab="letter" role="tab">Cover letter</button>
       <button class="tab" data-tab="applications" role="tab">Applications</button>
+      <button class="tab" data-tab="interview" role="tab">Interview prep</button>
+      <button class="tab" data-tab="linkedin" role="tab">LinkedIn</button>
       <button class="tab" data-tab="memory" role="tab">Memory</button>
       <button class="tab" data-tab="history" role="tab">History</button>
     </nav>
@@ -66,6 +68,7 @@
           <span id="file-names" class="file-names"></span>
         </div>
         <button id="add" class="primary wide">Add to memory <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
+        <p class="hint strengthen-hint">Not sure what to add? <button id="strengthen" type="button" class="link">Answer a few questions</button> and the app fills in the numbers and details that make a CV stand out.</p>
       </section>
 
       <section id="result" class="card result" hidden>
@@ -131,12 +134,23 @@
             <option value="letter">US Letter</option>
           </select>
           <label class="check fit"><input id="fit" type="checkbox"> Fit to one page</label>
+          <select id="region-select" title="Which country's CV conventions to follow (spelling, length, photo)"></select>
+          <select id="language-select" title="Language of this CV"></select>
+          <button id="photo-btn" type="button" class="small" title="Add a photo (common in Hong Kong; left off US and UK CVs)">Photo</button>
+          <input id="photo-file" type="file" accept="image/jpeg,image/png" hidden>
           <span id="page-count" class="page-count"></span>
         </div>
 
         <details id="check-panel" class="check-panel" hidden>
           <summary><span id="check-summary">CV check</span></summary>
           <div id="check-list" class="check-list"></div>
+          <div id="truth" class="truth">
+            <div class="truth-head">
+              <div><strong>Is it all true?</strong> <span class="hint">The AI compares every line of this CV with your memory and flags anything it can't back up, so a tailored CV never overstates what you did.</span></div>
+              <button id="truth-run" type="button" class="small">Check it's all true</button>
+            </div>
+            <div id="truth-list" class="truth-list"></div>
+          </div>
         </details>
 
         <section id="compare-view" class="compare-view" hidden>
@@ -225,17 +239,54 @@
         <form id="app-form" class="card app-form" hidden>
           <h2>New application</h2>
           <div class="app-grid">
-            <label class="field"><span class="field-label">Company</span><input name="company" autocomplete="off"></label>
-            <label class="field"><span class="field-label">Role</span><input name="role" autocomplete="off"></label>
-            <label class="field wide"><span class="field-label">Link to the job ad (optional)</span><input name="link" autocomplete="off"></label>
-            <label class="field wide"><span class="field-label">Job description: paste the full ad so the CV can be tailored to it</span><textarea name="target" rows="7"></textarea></label>
+            <label class="field wide"><span class="field-label">Applying for</span>
+              <select name="kind">
+                <option value="job">A job or internship</option>
+                <option value="phd">A PhD, master's by research or research position</option>
+              </select>
+            </label>
+            <label class="field"><span class="field-label" data-job="Company" data-phd="University">Company</span><input name="company" autocomplete="off"></label>
+            <label class="field"><span class="field-label" data-job="Role" data-phd="Programme or lab (e.g. PhD in Epidemiology)">Role</span><input name="role" autocomplete="off"></label>
+            <label class="field wide phd-only" hidden><span class="field-label">Potential supervisor (optional)</span><input name="supervisor" autocomplete="off" placeholder="e.g. Prof. Jane Wong"></label>
+            <label class="field wide"><span class="field-label" data-job="Link to the job ad (optional)" data-phd="Link to the programme or lab page (optional)">Link to the job ad (optional)</span>
+              <span class="inline"><input name="link" autocomplete="off" placeholder="https://…"><button type="button" id="fetch-ad" class="small" title="Read the job ad from this page and paste it below">Get the ad from this link</button></span>
+            </label>
+            <label class="field"><span class="field-label">Country (CV conventions)</span><select name="region"></select></label>
+            <label class="field"><span class="field-label">Language</span><select name="language"></select></label>
+            <label class="field wide"><span class="field-label" data-job="Job description: paste the full ad so the CV can be tailored to it" data-phd="Programme and research: paste the programme page, the lab's research, or the supervisor's recent work, so the CV and statement can speak to it">Job description: paste the full ad so the CV can be tailored to it</span><textarea name="target" rows="7"></textarea></label>
           </div>
           <div class="row end">
             <button type="button" id="app-cancel">Cancel</button>
-            <button type="submit" class="primary">Create tailored CV</button>
+            <button type="submit" class="primary" data-job="Create tailored CV" data-phd="Create academic CV">Create tailored CV</button>
           </div>
         </form>
         <div id="app-list" class="app-list"></div>
+      </section>
+
+      <section id="tab-interview" class="panel" hidden>
+        <div class="toolbar">
+          <span id="prep-for" class="edit-status"></span>
+          <div class="spacer"></div>
+          <button id="prep-write" class="primary">Prepare me</button>
+        </div>
+        <div id="prep" class="prep"></div>
+        <div id="prep-empty" class="empty">
+          <h3>Interview prep</h3>
+          <p id="prep-empty-text"></p>
+        </div>
+      </section>
+
+      <section id="tab-linkedin" class="panel" hidden>
+        <div class="toolbar">
+          <span class="hint">Profile text written from your memory, so LinkedIn matches your CV. Copy each part into LinkedIn.</span>
+          <div class="spacer"></div>
+          <button id="linkedin-write" class="primary">Write my LinkedIn text</button>
+        </div>
+        <div id="linkedin" class="linkedin"></div>
+        <div id="linkedin-empty" class="empty">
+          <h3>Keep LinkedIn in step with your CV</h3>
+          <p>Get a headline, an About section and a description for each job, all written from your memory. Update it whenever your CV changes.</p>
+        </div>
       </section>
 
       <section id="tab-memory" class="panel" hidden>
@@ -266,6 +317,14 @@
     </main>
   </div>
 
+  <dialog id="modal" class="modal">
+    <form method="dialog" class="modal-box">
+      <div class="modal-head"><h2 id="modal-title"></h2><button value="close" class="modal-x" title="Close" aria-label="Close">×</button></div>
+      <div id="modal-body" class="modal-body"></div>
+      <div id="modal-actions" class="row end"></div>
+    </form>
+  </dialog>
+
   <div id="busy" class="busy" hidden>
     <div class="busy-box"><div class="spinner"></div><span id="busy-text">Working…</span></div>
   </div>
@@ -274,5 +333,6 @@
   <script src="/static/app.js"></script>
   <script src="/static/assist.js"></script>
   <script src="/static/compare.js"></script>
+  <script src="/static/extras.js"></script>
 </body>
 </html>

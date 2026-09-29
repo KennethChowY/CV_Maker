@@ -7,7 +7,7 @@
   --cv-accent: #1f4e79;
   --cv-rule: #c9cfd8;
   --cv-scale: 1;
-  --cv-font: "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  --cv-font: "Helvetica Neue", "Segoe UI", Arial, "PingFang HK", "PingFang TC", "Heiti TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", sans-serif;
   font-family: var(--cv-font);
   font-size: calc(10.5pt * var(--cv-scale));
   line-height: 1.32;
@@ -63,7 +63,7 @@
 
 /* ---- template: Classic (serif, centred header; the style most tech recruiters know) ---- */
 .cv.t-classic {
-  --cv-font: "Charter", "Bitstream Charter", "Georgia", "Times New Roman", serif;
+  --cv-font: "Charter", "Bitstream Charter", "Georgia", "Times New Roman", "PingFang HK", "PingFang TC", "Heiti TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", serif;
   --cv-accent: var(--cv-ink);
   --cv-rule: #1b1b1b;
   line-height: 1.28;
@@ -80,7 +80,7 @@
 
 /* ---- template: Minimal (clean sans, black and white) ---- */
 .cv.t-minimal {
-  --cv-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --cv-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, "PingFang HK", "PingFang TC", "Heiti TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", sans-serif;
   --cv-accent: var(--cv-ink);
   --cv-rule: #e1e4e8;
 }
@@ -108,6 +108,9 @@ body.standalone .cv { max-width: 182mm; margin: 12mm auto; }
 .cv.cover .letter-date { color: var(--cv-muted); margin-bottom: 1.2em; }
 .cv.cover .letter-closing { margin-top: 1.4em; margin-bottom: 0.2em; }
 .cv.cover .letter-sign { font-weight: 700; }
+.cv.cover .letter-title { font-size: 1.25em; margin: 0 0 0.2em; color: var(--cv-accent); letter-spacing: 0.02em; }
+.cv.cover .letter-title + .letter-re { color: var(--cv-muted); margin-bottom: 1.4em; }
+.cv.cover p { orphans: 3; widows: 3; }
 
 /* ---- page breaks: where a new page may start (cv-layout.js predicts the same places) ----
    - never straight after a section heading, or inside an entry's title lines
@@ -131,7 +134,7 @@ body.standalone .cv { max-width: 182mm; margin: 12mm auto; }
 
 /* ---- ATS-safe version: one plain column in a standard font, everything in reading order.
    Used for the "ATS-safe PDF" download; not offered as an on-screen template. ---- */
-.cv.t-ats { --cv-font: Arial, "Helvetica Neue", Helvetica, sans-serif; --cv-accent: #000; --cv-ink: #000;
+.cv.t-ats { --cv-font: Arial, "Helvetica Neue", Helvetica, "PingFang HK", "PingFang TC", "Heiti TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", sans-serif; --cv-accent: #000; --cv-ink: #000;
   --cv-muted: #222; --cv-rule: #000; font-size: calc(10.5pt * var(--cv-scale)); }
 .cv.t-ats .cv-name { font-size: 1.8em; }
 .cv.t-ats .cv-headline { color: #000; font-weight: 400; }
@@ -149,5 +152,6 @@ body.standalone .cv { max-width: 182mm; margin: 12mm auto; }
 .cv-header.has-photo { display: flex; align-items: center; gap: 1.2em; text-align: left; }
 .cv-header.has-photo .cv-header-text { flex: 1; min-width: 0; }
 .cv-photo { width: 24mm; height: 30mm; object-fit: cover; border-radius: 3px; flex: 0 0 auto; order: 2; }
-.cv.t-classic .cv-header.has-photo .cv-contact { justify-content: flex-start; }
+.cv .cv-header.has-photo .cv-header-text > * { text-align: left; }
+.cv .cv-header.has-photo .cv-contact { justify-content: flex-start; }
 .cv.t-ats .cv-photo { display: none; }
