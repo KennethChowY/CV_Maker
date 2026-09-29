@@ -64,6 +64,7 @@ function render(next) {
   cv.hidden = !cv_html;
   $("cv-empty").hidden = !!cv_html;
   $("pdf").disabled = !cv_html;
+  $("docx").disabled = !cv_html;
   setEditStatus(cv_meta.edited ? "edited" : "clean");
 
   renderList($("advice"), state.advice);
@@ -524,12 +525,44 @@ async function saveSettings(patch) {
   }
 }
 
-function downloadPdf() {
+async function downloadFile(url, busyMessage) {
+  await savingEdits;
+  return withBusy(busyMessage, async () => {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const err = new Error(data.error || `Download failed (${res.status})`);
+      err.status = res.status;
+      throw err;
+    }
+    const match = /filename\*=UTF-8''([^;]+)/.exec(res.headers.get("Content-Disposition") || "");
+    const name = match ? decodeURIComponent(match[1]) : url.split("/").pop();
+    const link = el("a");
+    link.href = URL.createObjectURL(await res.blob());
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    return true;
+  });
+}
+
+function printFallback(kind) {
   const name = state.memory.profile.name || "My";
   const original = document.title;
-  document.title = `${name} CV`; // becomes the suggested PDF file name
+  document.title = `${name} ${kind}`; // becomes the suggested PDF file name
   window.print();
   document.title = original;
+}
+
+async function downloadPdf() {
+  const scale = parseFloat(getComputedStyle($("cv")).getPropertyValue("--cv-scale")) || 1;
+  const ok = await downloadFile(`/api/export/cv.pdf?scale=${scale}`, "Making your PDF…");
+  if (!ok && $("notice").textContent.includes("No Chrome")) {
+    showNotice("No Chrome, Edge or Brave browser was found, so the print window opened instead. Choose 'Save as PDF'.");
+    printFallback("CV");
+  }
 }
 
 function switchTab(name) {
@@ -1191,6 +1224,7 @@ $("cv").addEventListener("paste", (e) => {
 });
 $("learn").addEventListener("click", learnFromEdits);
 $("pdf").addEventListener("click", downloadPdf);
+$("docx").addEventListener("click", () => downloadFile("/api/export/cv.docx", "Making your Word document…"));
 $("undo").addEventListener("click", undo);
 
 $("toggle-json").addEventListener("click", () => {

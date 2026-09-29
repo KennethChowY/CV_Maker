@@ -10,7 +10,10 @@ from pathlib import Path
 from flask import Flask, Response, jsonify, request, send_from_directory
 from pydantic import ValidationError
 
+from urllib.parse import quote
+
 from .ai import AIError, Attachment
+from .export import ExportError, html_to_docx, html_to_pdf, page_document
 from .models import NO_AI_MESSAGE, ModelManager, build_ai, check_api_key, credentials_configured, default_choice
 from .render import basic_cv, render_cv, section_list, tidy_cv
 from .schema import Memory
@@ -37,6 +40,12 @@ def ai_status(ai) -> dict:
         return {"label": "No AI model", "ready": False, "message": NO_AI_MESSAGE, "local": False}
     status = getattr(ai, "status", None)
     return status() if status else {"label": "AI", "ready": True, "message": "", "local": False}
+
+
+def attachment(filename: str) -> str:
+    """Content-Disposition value that works for names with accents or dashes."""
+    ascii_name = filename.encode("ascii", "ignore").decode() or "download"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
 
 
 def clean_html(html: str) -> str:
@@ -307,6 +316,50 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         store.save_settings({"active_version": vid})
         return state()
 
+    # ---- downloads ---------------------------------------------------
+
+    def design() -> dict:
+        settings = store.load_settings()
+        return {
+            "template": settings["template"] if settings["template"] in TEMPLATES else "classic",
+            "accent": settings["accent"] if re.fullmatch(r"#[0-9a-fA-F]{6}", settings["accent"]) else "#1f4e79",
+            "page_size": settings["page_size"],
+        }
+
+    def file_name(kind: str, ext: str) -> str:
+        vid = store.active_version()
+        name = store.load_memory().profile.name.strip() or "My"
+        company = store.version_info(vid)["company"] if vid != GENERAL else ""
+        return f"{name} {kind}{f' – {company}' if company else ''}.{ext}"
+
+    def scale_arg() -> float:
+        try:
+            return min(1.0, max(0.7, float(request.args.get("scale", 1))))
+        except ValueError:
+            return 1.0
+
+    @app.get("/api/export/cv.pdf")
+    def export_cv_pdf():
+        body = store.cv_html(store.active_version())
+        if not body:
+            return error("There's no CV to download yet.")
+        doc = page_document(body, title=file_name("CV", "pdf"), scale=scale_arg(), **design())
+        try:
+            pdf = html_to_pdf(doc)
+        except ExportError as e:
+            return error(str(e), 501)
+        return Response(pdf, mimetype="application/pdf",
+                        headers={"Content-Disposition": attachment(file_name("CV", "pdf"))})
+
+    @app.get("/api/export/cv.docx")
+    def export_cv_docx():
+        body = store.cv_html(store.active_version())
+        if not body:
+            return error("There's no CV to download yet.")
+        data = html_to_docx(body, **design())
+        return Response(data, mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        headers={"Content-Disposition": attachment(file_name("CV", "docx"))})
+
     @app.get("/cv.html")
     def standalone_cv():
         cv = store.load_cv(store.active_version())
@@ -318,7 +371,8 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         html = (
             f"<!doctype html><html><head><meta charset='utf-8'><title>{name} – CV</title>"
             f"<style>{css}\n@page {{ size: {settings['page_size']}; }}</style></head>"
-            f"<body class='standalone'><article class='cv t-{template}' style='--cv-accent: {accent}'>"
+            f"<body class='standalone'><article class='cv t-{template}'"
+            f"{f' style=--cv-accent:{accent}' if template == 'modern' else ''}>"
             f"{store.cv_html(store.active_version())}</article></body></html>"
         )
         return Response(html, mimetype="text/html")

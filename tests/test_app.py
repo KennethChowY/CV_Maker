@@ -231,4 +231,4 @@ def test_design_settings_are_validated_and_used_on_the_standalone_page(client):
     assert body["settings"]["template"] == "modern" and body["settings"]["fit_one_page"] is True
     client.post("/api/ingest", data={"text": "Engineer"})
     page = client.get("/cv.html").get_data(as_text=True)
-    assert "class='cv t-modern'" in page and "--cv-accent: #0f6e6e" in page
+    assert "class='cv t-modern'" in page and "--cv-accent:#0f6e6e" in page
