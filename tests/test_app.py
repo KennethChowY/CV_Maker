@@ -89,6 +89,23 @@ class FakeAI:
         return SupervisorEmail(subject="Prospective PhD student", body=f"Dear {supervisor or 'Professor'},",
                                fit="Partial", paper="A paper", overlap="Both use R")
 
+    def email_pieces(self, memory, research, paper="", interest="", instruction=""):
+        from cv_maker.quality import EmailPieces
+        self.pieces_calls = getattr(self, "pieces_calls", []) + [instruction]
+        return EmailPieces(paper_sentences="Your cohort paper showed exposure effects; I wondered how it handled missing data.",
+                           link_sentences="At the lab I built a data system for 3 studies, which is the same kind of work.",
+                           learn="how to model exposures over time", subject="Prospective PhD student: exposures")
+
+    def review_memory(self, memory):
+        from cv_maker.review import FieldChange, MemoryReview
+        first = memory.experience[0].id if memory.experience else "nope"
+        return MemoryReview(changes=[
+            FieldChange(item_id=first, field="highlights", new_list=["Built a data system used by 40 researchers"],
+                        reason="Stronger wording"),
+            FieldChange(item_id=first, field="location", new_text="Hong Kong", reason="Stated elsewhere"),
+            FieldChange(item_id="made-up", field="role", new_text="CEO"),
+            FieldChange(item_id=first, field="id", new_text="hack")])
+
     def linkedin(self, memory, target=""):
         from cv_maker.assistant import LinkedInProfile, LinkedInRole
         return LinkedInProfile(headline="Data scientist", about="I like data.",

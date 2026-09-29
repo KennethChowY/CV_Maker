@@ -26,6 +26,8 @@ from .backend import (
 from .common import AIError, Attachment
 from .assistant import (Email, InterviewPrep, LinkedInProfile, PaperMatch, StrengthenQuestions, SupervisorEmail,
                         TruthReport)
+from .quality import EmailPieces
+from .review import MemoryReview
 from .schema import BaseModel, CVDocument, IngestResult, Memory
 from .writing import BulletSuggestions, CoverLetter
 
@@ -36,7 +38,8 @@ MODEL = os.environ.get("CV_MAKER_MODEL", "claude-opus-5-5")
 # How hard the model should think for each kind of request.
 EFFORT = {MemoryUpdate: "medium", CVWording: "high", BulletSuggestions: "low", CoverLetter: "medium",
           TruthReport: "high", StrengthenQuestions: "low", InterviewPrep: "medium", Email: "low",
-          LinkedInProfile: "medium", CVDocument: "medium", SupervisorEmail: "high", PaperMatch: "medium"}
+          LinkedInProfile: "medium", CVDocument: "medium", SupervisorEmail: "high", PaperMatch: "medium",
+          EmailPieces: "medium", MemoryReview: "high"}
 
 
 class ClaudeAI(ChatBackend):

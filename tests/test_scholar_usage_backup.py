@@ -90,7 +90,8 @@ def test_professor_email_uses_their_papers(tmp_path, openalex):
     # ...rewrites keep the student's words, and a paper they choose skips the matching step.
     matched = ai.matched
     c.post(f"/api/versions/{vid}/supervisor-email", json={"instruction": "Shorter", "paper_id": "W2"})
-    assert ai.supervisor_extra == ("Air pollution and health", "Shorter") and ai.matched == matched
+    assert ai.supervisor_extra[0] == "Air pollution and health" and ai.supervisor_extra[1].startswith("Shorter")
+    assert ai.matched == matched
     assert reads == ["W2"]  # each paper is downloaded once
     email = c.post(f"/api/versions/{vid}/supervisor-email", json={"paper_id": "W1"}).get_json()
     assert email["paper"]["read"] == "abstract" and "Exposome-wide" in ai.paper

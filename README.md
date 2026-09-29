@@ -55,6 +55,15 @@ It can use either:
   use its `data` folder as the app's data folder. **Automatic backups** saves
   one to a folder you choose (iCloud Drive is suggested on a Mac), at most once
   an hour after you change something, keeping the latest 30.
+- **Review memory.** In the Memory tab, **Review memory** suggests fixes and
+  shows each one as before and after. Nothing changes until you tick the ones
+  you want and click **Apply** (and applied changes can be undone in History).
+  *Quick fixes* come from simple rules, so they're reliable with any model:
+  one date format, duplicates merged, research and teaching roles marked as
+  such, a final-year project moved to its degree's own line, service items
+  marked, repeated bullets and skills removed. *AI suggestions* reword vague
+  bullets and fix mixed-up entries; any number that isn't already in your
+  memory is flagged so nothing made-up slips in. It never runs by itself.
 - **Fixing wrong information.** In the **Memory** tab, click **Edit** on any
   entry to correct it in a form, move it between Experience and Projects, or
   change a publication's type. **+ Add** creates a new entry. These edits don't
@@ -142,7 +151,16 @@ It can use either:
   inventing a link. Add a sentence on what draws you to their work for a much
   more personal email. The draft shows which paper it used and what it read
   (full text, abstract only or title only), with a link to skim it before you
-  send; **Rewrite** takes instructions like "warmer" or "shorter". It's
+  send; **Rewrite** takes instructions like "warmer" or "shorter".
+  *Good emails from small models:* with a local model the app uses **guided**
+  writing: it writes your introduction (degree, university, year, current role),
+  the question about PhD places and the sign-off itself, straight from your
+  memory, and the AI writes only the two or three sentences about the paper and
+  how it connects to you. Strong models write the whole email (**free-form**);
+  you can pick either. Every draft is checked for stock phrases, length, a clear
+  mention of the paper and numbers that aren't in your memory; a draft with
+  problems is sent back once to be fixed, and anything still wrong is listed
+  above the email. It's
   saved as a PhD application with an academic CV, so you can track it.
 - **Interview prep.** Open an application and go to **Interview prep** for the
   8-10 questions you're most likely to be asked for that job, with talking points

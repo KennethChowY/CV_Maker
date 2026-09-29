@@ -38,6 +38,8 @@ from .assistant import ACADEMIC_GUIDANCE, LANGUAGES, REGIONS, basic_questions
 from .backup import auto_backup, backup_zip, check_folder
 from .backup import status as backup_status
 from .jobads import fetch_job_ad
+from .quality import assemble_email, check_email
+from .review import ai_suggestions, apply_suggestions, rule_suggestions
 from .scholar import all_works, find_authors, find_work, paper_text, profile_text, read_paper, research_profile
 from .usage import UsageLog
 from .render import basic_cv, render_cv, render_letter, section_list, tidy_cv, with_photo
@@ -410,6 +412,33 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         store.mark_cv_edits_learned(store.active_version())
         return state(changes=result.changes, questions=result.questions)
 
+    # ---- reviewing the memory: only when asked, and nothing changes until suggestions are accepted ----
+
+    @app.post("/api/memory/review")
+    def review_memory():
+        memory = store.load_memory()
+        suggestions = rule_suggestions(memory)
+        ai = models.current()
+        use_ai = bool((request.get_json(silent=True) or {}).get("ai", True)) and ai is not None
+        if use_ai:
+            suggestions += ai_suggestions(memory, ai.review_memory(memory))
+        return jsonify({"suggestions": suggestions, "ai": use_ai})
+
+    @app.post("/api/memory/revise")
+    def revise_memory():
+        accepted = (request.get_json(silent=True) or {}).get("suggestions")
+        if not isinstance(accepted, list) or not accepted:
+            return error("Tick the suggestions you want first.")
+        try:
+            memory, done = apply_suggestions(store.load_memory(), [s for s in accepted if isinstance(s, dict)])
+        except ValidationError as e:
+            return error(f"One of those changes isn't valid: {e.errors()[0]['msg']}")
+        if not done:
+            return error("Those suggestions no longer match your memory. Review it again.")
+        store.save_memory(memory, source="review", input_text="Reviewed memory", changes=done)
+        return state(changes=done, notice=f"Applied {len(done)} change{'s' if len(done) > 1 else ''}. "
+                                          "You can undo them in the History tab. Click 'Rebuild CV' to use them.")
+
     @app.post("/api/undo")
     def undo():
         if not store.undo():
@@ -724,20 +753,43 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
                 passages = read[work["id"]]
             professor["interest"] = interest  # remembered for rewrites
             store.save_doc("professor", professor, vid)
-        email = ai.supervisor_email(memory, about, info["company"], info["role"],
-                                    info["supervisor"] or professor.get("name", ""), interest,
-                                    str(body.get("instruction", ""))[:500],
-                                    paper_text(work, passages) if work else "")
-        fit = (match.get("fit") or email.fit).strip().lower()
-        paper = {"title": email.paper}
+        professor_name = info["supervisor"] or professor.get("name", "")
+        instruction = str(body.get("instruction", ""))[:500]
+        chosen = paper_text(work, passages) if work else ""
+        # Guided: the app writes the parts it can get right itself and the AI only a few sentences.
+        # Automatic uses it for local models, which do much better at small, focused tasks.
+        style = str(body.get("style", "auto"))
+        guided = style == "guided" or (style == "auto" and getattr(ai, "local", False))
+
+        def draft(extra: str = ""):
+            note = " ".join(x for x in (instruction, extra) if x)
+            if guided:
+                pieces = ai.email_pieces(memory, about, chosen, interest, note)
+                subject, text = assemble_email(memory, professor_name, pieces)
+                return subject, text, ""
+            e = ai.supervisor_email(memory, about, info["company"], info["role"], professor_name, interest, note, chosen)
+            return e.subject, e.body, e
+
+        # Check the draft; if it has problems a reader would notice, send it back once to fix them.
+        context = f"{memory.model_dump_json()}\n{about}\n{chosen}"
+        name = memory.profile.name
+        subject, text, email = draft()
+        problems = check_email(subject, text, name=name, paper_title=work["title"] if work else "", context=context)
+        if problems:
+            subject, text, email = draft("Your previous draft had these problems; write it again without them: "
+                                         + " ".join(problems))
+            problems = check_email(subject, text, name=name, paper_title=work["title"] if work else "", context=context)
+        fit = (match.get("fit") or (email.fit if email else "")).strip().lower()
+        paper = {"title": email.paper if email else ""}
         if work:
             link = f"https://doi.org/{work['doi']}" if work.get("doi") else work.get("oa_url") or work.get("pdf_url", "")
             paper = {k: work.get(k, "") for k in ("id", "title", "year", "venue", "abstract", "abstract_source", "tldr")}
             paper.update(link=link, read="full" if passages else "abstract" if work.get("abstract") else "title",
                          read_from=passages.get("url", ""))
-        return jsonify({"subject": email.subject, "body": email.body, "paper": paper,
-                        "overlap": match.get("overlap") or email.overlap,
-                        "their_focus": match.get("their_focus") or email.their_focus,
+        return jsonify({"subject": subject, "body": text, "paper": paper, "checks": problems,
+                        "style": "guided" if guided else "free",
+                        "overlap": match.get("overlap") or (email.overlap if email else ""),
+                        "their_focus": match.get("their_focus") or (email.their_focus if email else ""),
                         "fit": fit if fit in ("strong", "partial", "weak") else ""})
 
     @app.post("/api/job-ad")

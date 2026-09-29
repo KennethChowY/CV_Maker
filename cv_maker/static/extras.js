@@ -371,18 +371,29 @@ async function draftSupervisorEmail(v, options = {}) {
     if (email.overlap) fit.append(el("div", "", `The link: ${email.overlap}`));
     notes.push(fit);
   }
+  if (email.checks?.length) {
+    const box = el("div", "fit-note weak");
+    box.append(el("strong", "", "Worth fixing before you send:"));
+    const ul = el("ul", "check-list-plain");
+    email.checks.forEach((c) => ul.append(el("li", "", c)));
+    box.append(ul);
+    notes.push(box);
+  }
   if (email.paper?.title) notes.push(paperCard(email.paper));
+  if (email.style === "guided") {
+    notes.push(el("p", "hint", "Guided writing: the app wrote your introduction, the question about PhD places and the sign-off straight from your memory; the AI wrote only the sentences about the paper and how it connects to you."));
+  }
   const instruction = el("input");
   instruction.placeholder = "Change something? e.g. \"warmer\", \"shorter\", \"mention I'd like to learn their methods\"";
   const rewrite = el("div", "rewrite");
   rewrite.append(instruction);
   const paperId = email.paper?.id || "";
   const extras = [{ label: "Rewrite", title: "Write a new draft about the same paper, following your instruction if you gave one",
-                    onClick: () => { $("modal").close(); draftSupervisorEmail(v, { instruction: instruction.value, paper_id: paperId }); return false; } }];
+                    onClick: () => { $("modal").close(); draftSupervisorEmail(v, { instruction: instruction.value, paper_id: paperId, style: options.style }); return false; } }];
   if (paperId) {
     extras.unshift({ label: "Change paper", onClick: async () => {
       const { professor } = await api("GET", `/api/versions/${v.id}/professor`);
-      showProfessor(v, professor, paperId);
+      showProfessor(v, { ...professor, style: options.style }, paperId);
       return false;
     } });
   }
@@ -481,6 +492,14 @@ function showProfessor(v, prof, chosen = "") {
   const interestField = el("label", "field");
   interestField.append(el("span", "field-label", "What draws you to their work? Optional, but it's what makes the email sound like you."), interest);
   body.push(interestField);
+  const style = el("select");
+  [["auto", state.ai_status.local ? "Automatic (guided, since you're using a local model)" : "Automatic (free-form, since you're using a strong model)"],
+   ["guided", "Guided: the app writes the facts, the AI only a few sentences (most reliable with small models)"],
+   ["free", "Free-form: the AI writes the whole email (best with strong models)"]].forEach(([value, text]) => style.append(new Option(text, value)));
+  style.value = prof.style || "auto";
+  const styleField = el("label", "field");
+  styleField.append(el("span", "field-label", "How to write it"), style);
+  body.push(styleField);
   if (!state.ai_enabled) body.push(el("p", "hint warn", "Choose an AI model in the top-left box to draft the email."));
   openModal(`Email a professor: ${v.name}`, body, [
     { label: "Search again", onClick: () => { professorSearch(v, prof.name); return false; } },
@@ -488,7 +507,8 @@ function showProfessor(v, prof, chosen = "") {
       onClick: () => {
         const pick = papers.querySelector("input[name=paper]:checked")?.value || "";
         $("modal").close();
-        draftSupervisorEmail(v, { interest: interest.value, paper_id: pick });
+        prof.style = style.value;
+        draftSupervisorEmail(v, { interest: interest.value, paper_id: pick, style: style.value });
         return false;
       } },
   ]);

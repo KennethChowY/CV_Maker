@@ -296,10 +296,27 @@
         <div class="toolbar">
           <span class="hint">Everything the app remembers about you. The CV is chosen from this.</span>
           <div class="spacer"></div>
+          <button id="review-memory" class="primary" title="Get suggested fixes for your memory. Nothing changes until you accept them.">Review memory</button>
           <button id="auto-backup" title="Save a backup automatically, for example to iCloud Drive">Automatic backups</button>
           <button id="backup" title="Download all your data (except your API key) as a zip file">Back up</button>
           <button id="toggle-json">Edit as JSON</button>
         </div>
+        <section id="review-panel" class="review-panel" hidden>
+          <div class="review-head">
+            <div>
+              <h2>Suggested fixes</h2>
+              <p class="hint">Nothing changes until you tick suggestions and click <strong>Apply</strong>. Applied changes can be undone in the History tab.</p>
+            </div>
+            <label class="check" id="review-ai-wrap"><input id="review-ai" type="checkbox" checked> Include AI suggestions</label>
+            <button id="review-run" type="button">Look again</button>
+            <button id="review-close" type="button">Close</button>
+          </div>
+          <div id="review-list" class="review-list"></div>
+          <div class="row end review-foot">
+            <button id="review-select-rules" type="button">Tick all quick fixes</button>
+            <button id="review-apply" type="button" class="primary" disabled>Apply selected</button>
+          </div>
+        </section>
         <div id="memory-view" class="memory-view"></div>
         <div id="json-wrap" hidden>
           <textarea id="json" class="json" spellcheck="false"></textarea>
@@ -338,5 +355,6 @@
   <script src="/static/assist.js"></script>
   <script src="/static/compare.js"></script>
   <script src="/static/extras.js"></script>
+  <script src="/static/review.js"></script>
 </body>
 </html>

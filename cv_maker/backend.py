@@ -34,6 +34,8 @@ from .schema import (
     SkillGroup,
 )
 from .writing import BulletSuggestions, CoverLetter, clean_suggestions, improve_prompt, letter_prompt
+from .quality import EmailPieces, pieces_prompt
+from .review import MemoryReview, review_prompt
 from .assistant import (
     Email,
     InterviewPrep,
@@ -296,6 +298,13 @@ class ChatBackend:
 
     def interview_prep(self, memory: Memory, target: str, company: str, role: str, kind: str = "job") -> InterviewPrep:
         return self._chat(*interview_prompt(_compact(memory), target, company, role, kind), InterviewPrep)
+
+    def review_memory(self, memory: Memory) -> MemoryReview:
+        return self._chat(*review_prompt(memory), MemoryReview)
+
+    def email_pieces(self, memory: Memory, research: str, paper: str = "", interest: str = "",
+                     instruction: str = "") -> EmailPieces:
+        return self._chat(*pieces_prompt(_compact(memory), research, paper, interest, instruction), EmailPieces)
 
     def match_paper(self, memory: Memory, research: str, interest: str = "") -> PaperMatch:
         return self._chat(*match_prompt(_compact(memory), research, interest), PaperMatch)

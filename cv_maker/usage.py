@@ -29,6 +29,8 @@ PURPOSES = {
     "Email": "Emails",
     "SupervisorEmail": "Emails to professors",
     "PaperMatch": "Emails to professors",
+    "EmailPieces": "Emails to professors",
+    "MemoryReview": "Reviewing memory",
     "LinkedInProfile": "LinkedIn text",
     "CVDocument": "Translation",
 }
