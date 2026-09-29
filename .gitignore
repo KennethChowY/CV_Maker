@@ -1,0 +1,6 @@
+# Your personal CV memory lives here. It's kept out of git by default.
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

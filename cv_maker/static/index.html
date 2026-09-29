@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CV Maker</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/cv.css">
+  <style id="page-size"></style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">CV Maker</div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="cv" role="tab">CV</button>
+      <button class="tab" data-tab="memory" role="tab">Memory</button>
+      <button class="tab" data-tab="history" role="tab">History</button>
+    </nav>
+    <div id="ai-status" class="ai-status"></div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <section class="card">
+        <h2>Tell me something new</h2>
+        <p class="hint">A new job, promotion, project, course, skill, a correction, or how you want the CV to read. Write it any way you like.</p>
+        <textarea id="input" rows="6" placeholder="e.g. In March I was promoted to Senior Engineer at Acme. I led the move to Kubernetes, which cut hosting costs by 30%."></textarea>
+        <div class="row">
+          <label class="file-btn">
+            <input id="files" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain" multiple>
+            <span>Attach CV or file</span>
+          </label>
+          <span id="file-names" class="file-names"></span>
+        </div>
+        <button id="add" class="primary wide">Add to memory <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
+      </section>
+
+      <section id="result" class="card result" hidden>
+        <h2>What changed</h2>
+        <ul id="changes"></ul>
+        <div id="questions-wrap" hidden>
+          <h3>Would make your CV stronger</h3>
+          <ul id="questions" class="questions"></ul>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Aim the CV</h2>
+        <p class="hint">Optional. Paste a job ad or describe the role you're after, and the CV is tailored to it.</p>
+        <textarea id="target" rows="4" placeholder="e.g. Senior backend role at a fintech, or paste a job description"></textarea>
+        <label class="check"><input id="auto" type="checkbox"> Rebuild CV automatically after each update</label>
+        <button id="rebuild" class="wide">Rebuild CV</button>
+      </section>
+
+      <section id="advice-card" class="card" hidden>
+        <h2>Tips to strengthen it</h2>
+        <ul id="advice"></ul>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div id="notice" class="notice" hidden></div>
+
+      <section id="tab-cv" class="panel">
+        <div class="toolbar">
+          <span id="edit-status" class="edit-status">Click anywhere on the CV to edit it.</span>
+          <div class="spacer"></div>
+          <button id="learn" title="Update the memory with facts and wording from your manual edits" disabled>Save edits to memory</button>
+          <select id="page-size-select" title="Paper size">
+            <option value="A4">A4</option>
+            <option value="letter">US Letter</option>
+          </select>
+          <button id="pdf" class="primary">Download PDF</button>
+        </div>
+        <div class="paper-wrap">
+          <article id="cv" class="cv paper" contenteditable="true" spellcheck="true"></article>
+        </div>
+        <div id="cv-empty" class="empty" hidden>
+          <h3>No CV yet</h3>
+          <p>Start by telling me about yourself on the left, or attach your current CV. Your memory builds up over time and the CV is rewritten from it.</p>
+        </div>
+      </section>
+
+      <section id="tab-memory" class="panel" hidden>
+        <div class="toolbar">
+          <span class="hint">Everything the app remembers about you. The CV is chosen from this.</span>
+          <div class="spacer"></div>
+          <button id="toggle-json">Edit as JSON</button>
+        </div>
+        <div id="memory-view" class="memory-view"></div>
+        <div id="json-wrap" hidden>
+          <textarea id="json" class="json" spellcheck="false"></textarea>
+          <div class="row end">
+            <button id="json-cancel">Cancel</button>
+            <button id="json-save" class="primary">Save memory</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-history" class="panel" hidden>
+        <div class="toolbar">
+          <span class="hint">Every update, newest first.</span>
+          <div class="spacer"></div>
+          <button id="undo">Undo last change</button>
+        </div>
+        <ol id="history" class="history"></ol>
+      </section>
+    </main>
+  </div>
+
+  <div id="busy" class="busy" hidden>
+    <div class="busy-box"><div class="spinner"></div><span id="busy-text">Working…</span></div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+<header class="cv-header">
+  <h1 class="cv-name">{{ cv.name }}</h1>
+  {% if cv.headline %}<p class="cv-headline">{{ cv.headline }}</p>{% endif %}
+  {% if cv.contact or cv.links %}
+  <p class="cv-contact">
+    {% for c in cv.contact %}<span>{{ c }}</span>{% endfor %}
+    {% for l in cv.links %}<span><a href="{{ l.url if '://' in l.url or l.url.startswith('mailto:') else 'https://' ~ l.url }}">{{ l.url | replace('https://', '') | replace('http://', '') }}</a></span>{% endfor %}
+  </p>
+  {% endif %}
+</header>
+{% if cv.summary %}
+<section class="cv-section">
+  <h2>Summary</h2>
+  <p class="cv-summary">{{ cv.summary }}</p>
+</section>
+{% endif %}
+{% for s in cv.sections %}
+<section class="cv-section">
+  <h2>{{ s.heading }}</h2>
+  {% for e in s.entries %}
+  <div class="cv-entry">
+    <div class="cv-entry-head">
+      <div>
+        <span class="cv-entry-title">{{ e.title }}</span>{% if e.subtitle %}<span class="cv-entry-sub"> · {{ e.subtitle }}</span>{% endif %}
+      </div>
+      <div class="cv-entry-meta">{{ e.location }}{% if e.location and e.dates %} · {% endif %}{{ e.dates }}</div>
+    </div>
+    {% if e.description %}<p class="cv-entry-desc">{{ e.description }}</p>{% endif %}
+    {% if e.bullets %}
+    <ul>
+      {% for b in e.bullets %}<li>{{ b }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if s.items %}
+  <ul class="cv-items">
+    {% for i in s.items %}
+    {% set parts = i.split(':', 1) %}
+    {% if parts | length == 2 and parts[0] | length <= 30 %}
+    <li><strong>{{ parts[0] }}:</strong>{{ parts[1] }}</li>
+    {% else %}
+    <li>{{ i }}</li>
+    {% endif %}
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endfor %}
