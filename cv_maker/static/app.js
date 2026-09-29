@@ -60,7 +60,12 @@ function render(next) {
   applyPageSize(settings.page_size);
 
   const cv = $("cv");
-  if (document.activeElement !== cv) cv.innerHTML = cv_html || "";
+  // Don't redraw under someone typing, unless a different CV is now open.
+  if (document.activeElement !== cv || cv.dataset.version !== state.active.id) {
+    if (document.activeElement === cv) cv.blur();
+    cv.innerHTML = cv_html || "";
+    cv.dataset.version = state.active.id;
+  }
   cv.hidden = !cv_html;
   $("cv-empty").hidden = !!cv_html;
   $("pdf").disabled = !cv_html;
@@ -454,7 +459,7 @@ async function addToMemory() {
   const form = new FormData();
   form.append("text", text);
   for (const f of files) form.append("files", f);
-  await savingEdits;
+  await flushEdits();
   const rebuilding = state.settings.auto_rebuild && !state.cv_meta.edited;
   await withBusy(busyText(rebuilding ? "Updating memory and rewriting your CV…" : "Updating memory…"), async () => {
     const next = await api("POST", "/api/ingest", form);
@@ -467,7 +472,7 @@ async function addToMemory() {
 }
 
 async function rebuild() {
-  await savingEdits;
+  await flushEdits();
   if (state.cv_meta.edited &&
       !confirm("Rebuilding replaces your manual edits to the CV. Use 'Save edits to memory' first if you want to keep them. Rebuild anyway?")) return;
   await withBusy(state.ai_enabled ? busyText("Writing the best version of your CV…") : "Building CV…", async () => {
@@ -476,18 +481,40 @@ async function rebuild() {
   });
 }
 
+// The CV page's HTML without temporary on-screen highlights.
+function cvHtml() {
+  const copy = $("cv").cloneNode(true);
+  copy.querySelectorAll(".improving, .flash").forEach((n) => n.classList.remove("improving", "flash"));
+  copy.querySelectorAll("[class='']").forEach((n) => n.removeAttribute("class"));
+  return copy.innerHTML;
+}
+
+let pendingSave = null;  // a save waiting for typing to pause: () => Promise
+
 function scheduleEditSave() {
   setEditStatus("saving");
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    savingEdits = api("POST", "/api/cv", { html: $("cv").innerHTML })
-      .then((next) => { state = next; setEditStatus("edited"); })
+  const version = state.active.id;  // edits belong to the CV that's on screen now
+  pendingSave = () => {
+    pendingSave = null;
+    savingEdits = api("POST", "/api/cv", { html: cvHtml(), version })
+      .then((next) => { if (next.active.id === state.active.id) state = next; setEditStatus("edited"); })
       .catch((err) => showNotice(err.message, true));
-  }, 800);
+    return savingEdits;
+  };
+  saveTimer = setTimeout(() => pendingSave && pendingSave(), 800);
+}
+
+// Save anything still waiting (e.g. before switching CVs or downloading), then continue.
+async function flushEdits() {
+  clearTimeout(saveTimer);
+  if (pendingSave) await pendingSave();
+  await savingEdits;
+  if (typeof flushLetter === "function") await flushLetter();
 }
 
 async function learnFromEdits() {
-  await savingEdits;
+  await flushEdits();
   await withBusy(busyText("Saving your edits into memory…"), async () => {
     const next = await api("POST", "/api/cv/learn", { text: $("cv").innerText });
     render(next);
@@ -528,7 +555,7 @@ async function saveSettings(patch) {
 }
 
 async function downloadFile(url, busyMessage) {
-  await savingEdits;
+  await flushEdits();
   return withBusy(busyMessage, async () => {
     const res = await fetch(url);
     if (!res.ok) {
@@ -894,7 +921,7 @@ function renderVersions() {
 }
 
 async function openVersion(id, tab = "cv") {
-  await savingEdits;
+  await flushEdits();
   try {
     render(await api("POST", "/api/versions/active", { id }));
     showNotice("");
@@ -1108,9 +1135,9 @@ async function saveLayout(order, hidden) {
     ...order.map((k) => state.sections.find((r) => r.key === k)).filter(Boolean),
   ].map((r) => ({ ...r, hidden: hidden.includes(r.key) }));
   renderSections();
-  await savingEdits;
+  await flushEdits();
   try {
-    render(await api("POST", "/api/cv/layout", { order, hidden, html: cv.innerHTML }));
+    render(await api("POST", "/api/cv/layout", { order, hidden, html: cvHtml() }));
   } catch (err) {
     showNotice(err.message, true);
   }
@@ -1320,7 +1347,7 @@ $("cv").addEventListener("paste", (e) => {
 $("learn").addEventListener("click", learnFromEdits);
 $("discard").addEventListener("click", async () => {
   if (!confirm("Undo all your edits to this CV and go back to the last generated version?")) return;
-  await savingEdits;
+  await flushEdits();
   await withBusy("Undoing your edits…", async () => {
     render(await api("POST", "/api/cv/reset"));
     showNotice("");

@@ -127,7 +127,11 @@ function renderLetter() {
   $("letter-for").textContent = letter.html
     ? `Cover letter for ${forWhom}${letter.edited ? " · edits saved" : ""}. Click to edit.`
     : `Cover letter for ${forWhom}`;
-  if (document.activeElement !== page) page.innerHTML = letter.html || "";
+  if (document.activeElement !== page || page.dataset.version !== active.id) {
+    if (document.activeElement === page) page.blur();
+    page.innerHTML = letter.html || "";
+    page.dataset.version = active.id;
+  }
   page.hidden = !letter.html;
   page.classList.remove("t-classic", "t-modern", "t-minimal");
   page.classList.add(`t-${state.settings.template}`);
@@ -153,21 +157,35 @@ async function writeLetter() {
   });
 }
 
+let pendingLetterSave = null;
+
 $("letter").addEventListener("input", () => {
   clearTimeout(letterTimer);
-  letterTimer = setTimeout(() => {
-    savingLetter = api("POST", "/api/letter/edits", { html: $("letter").innerHTML })
-      .then(() => { state.letter = { ...state.letter, html: $("letter").innerHTML, edited: true }; })
+  const version = state.active.id;
+  const html = () => $("letter").innerHTML;
+  pendingLetterSave = () => {
+    pendingLetterSave = null;
+    const saved = html();
+    savingLetter = api("POST", "/api/letter/edits", { html: saved, version })
+      .then(() => { if (state.active.id === version) state.letter = { ...state.letter, html: saved, edited: true }; })
       .catch((err) => showNotice(err.message, true));
-  }, 800);
+    return savingLetter;
+  };
+  letterTimer = setTimeout(() => pendingLetterSave && pendingLetterSave(), 800);
 });
+
+async function flushLetter() {
+  clearTimeout(letterTimer);
+  if (pendingLetterSave) await pendingLetterSave();
+  await savingLetter;
+}
 $("letter").addEventListener("paste", (e) => {
   e.preventDefault();
   document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
 });
 $("letter-write").addEventListener("click", writeLetter);
 $("letter-pdf").addEventListener("click", async () => {
-  await savingLetter;
+  await flushLetter();
   const ok = await downloadFile("/api/export/letter.pdf", "Making your PDF…");
   if (!ok && $("notice").textContent.includes("No Chrome")) {
     showNotice("No Chrome, Edge or Brave browser was found, so the print window opened instead. Choose 'Save as PDF'.");
@@ -175,6 +193,6 @@ $("letter-pdf").addEventListener("click", async () => {
   }
 });
 $("letter-docx").addEventListener("click", async () => {
-  await savingLetter;
+  await flushLetter();
   downloadFile("/api/export/letter.docx", "Making your Word document…");
 });

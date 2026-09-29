@@ -98,3 +98,13 @@ def test_letter_rejects_unknown_tone_and_needs_ai(client, tmp_path):
     assert client.get("/api/export/letter.pdf").status_code == 400  # nothing written yet
     no_ai = create_app(tmp_path / "other", ai=None).test_client()
     assert no_ai.post("/api/letter", json={}).status_code == 400
+
+
+def test_edits_are_saved_to_the_cv_they_were_made_on(client):
+    vid = client.post("/api/versions", json={"company": "Acme"}).get_json()["active"]["id"]
+    client.post("/api/versions/active", json={"id": "general"})
+    # A save that was still pending when the person switched to the general CV:
+    client.post("/api/cv", json={"html": "<p>edit made on Acme</p>", "version": vid})
+    assert "edit made on Acme" not in client.get("/api/state").get_json()["cv_html"]
+    assert client.post("/api/versions/active", json={"id": vid}).get_json()["cv_html"] == "<p>edit made on Acme</p>"
+    assert client.post("/api/cv", json={"html": "x", "version": "gone-123"}).status_code == 404

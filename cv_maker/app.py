@@ -245,10 +245,14 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
 
     @app.post("/api/cv")
     def save_cv_edits():
-        html = (request.get_json(silent=True) or {}).get("html")
+        body = request.get_json(silent=True) or {}
+        html = body.get("html")
         if not isinstance(html, str):
             return error("Missing CV HTML.")
-        store.save_cv_edits(clean_html(html), store.active_version())
+        vid = str(body.get("version") or store.active_version())  # the CV these edits were made on
+        if not store.has_version(vid):
+            return error("That CV no longer exists.", 404)
+        store.save_cv_edits(clean_html(html), vid)
         return state()
 
     @app.post("/api/cv/reset")
@@ -388,10 +392,13 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
 
     @app.post("/api/letter/edits")
     def save_letter_edits():
-        html = (request.get_json(silent=True) or {}).get("html")
+        body = request.get_json(silent=True) or {}
+        html = body.get("html")
         if not isinstance(html, str):
             return error("Missing letter.")
-        vid = store.active_version()
+        vid = str(body.get("version") or store.active_version())
+        if not store.has_version(vid):
+            return error("That application no longer exists.", 404)
         letter = store.load_letter(vid)
         letter.update({"html": clean_html(html), "edited": True})
         store.save_letter(letter, vid)
