@@ -7,12 +7,38 @@ polished view of the memory, rebuilt whenever the memory changes.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any, get_origin
+
+from pydantic import BaseModel as _PydanticModel
+from pydantic import Field, model_validator
+
+
+class BaseModel(_PydanticModel):
+    """Tolerates the small slips local AI models make: null instead of a value,
+    a number where text was expected, or a single string instead of a list."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lenient(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        fixed = {}
+        for key, value in data.items():
+            if value is None:
+                continue  # fall back to the field's default
+            field = cls.model_fields.get(key)
+            if field is not None:
+                if get_origin(field.annotation) is list and isinstance(value, str):
+                    value = [value] if value.strip() else []
+                elif field.annotation is str and isinstance(value, (int, float)) and not isinstance(value, bool):
+                    value = str(value)
+            fixed[key] = value
+        return fixed
 
 
 class Link(BaseModel):
-    label: str = Field(description="e.g. LinkedIn, GitHub, Portfolio")
-    url: str
+    label: str = Field("", description="e.g. LinkedIn, GitHub, Portfolio")
+    url: str = ""
 
 
 class Profile(BaseModel):
@@ -25,7 +51,7 @@ class Profile(BaseModel):
 
 
 class Experience(BaseModel):
-    id: str = Field(description="Stable unique id, e.g. 'exp-acme-2021'. Never change an existing id.")
+    id: str = Field("", description="Stable unique id, e.g. 'exp-acme-2021'. Never change an existing id.")
     kind: str = Field("work", description="work | internship | volunteering | freelance | other")
     organization: str = ""
     role: str = ""
@@ -41,7 +67,7 @@ class Experience(BaseModel):
 
 
 class Education(BaseModel):
-    id: str
+    id: str = ""
     institution: str = ""
     qualification: str = Field("", description="e.g. 'BSc', 'A-Levels', 'MBA'")
     field: str = ""
@@ -53,7 +79,7 @@ class Education(BaseModel):
 
 
 class Project(BaseModel):
-    id: str
+    id: str = ""
     name: str = ""
     role: str = ""
     link: str = ""
@@ -65,14 +91,14 @@ class Project(BaseModel):
 
 
 class SkillGroup(BaseModel):
-    category: str = Field(description="e.g. 'Languages', 'Frameworks', 'Tools', 'Soft skills'")
+    category: str = Field("", description="e.g. 'Languages', 'Frameworks', 'Tools', 'Soft skills'")
     skills: list[str] = Field(default_factory=list)
 
 
 class Achievement(BaseModel):
     """Certifications, awards, publications, talks and similar one-line items."""
 
-    id: str
+    id: str = ""
     kind: str = Field("award", description="certification | award | publication | talk | other")
     title: str = ""
     issuer: str = ""
@@ -102,7 +128,9 @@ class Memory(BaseModel):
 
 class IngestResult(BaseModel):
     memory: Memory = Field(description="The complete updated memory, including everything unchanged")
-    changes: list[str] = Field(description="Short human-readable list of what was added, changed or removed")
+    changes: list[str] = Field(
+        default_factory=list, description="Short human-readable list of what was added, changed or removed"
+    )
     questions: list[str] = Field(
         default_factory=list,
         description="Follow-up questions whose answers would make the CV stronger (missing dates, metrics...)",
@@ -110,7 +138,7 @@ class IngestResult(BaseModel):
 
 
 class CVEntry(BaseModel):
-    title: str = Field(description="Main line, e.g. role or degree")
+    title: str = Field("", description="Main line, e.g. role or degree")
     subtitle: str = Field("", description="Organization or institution")
     location: str = ""
     dates: str = Field("", description="Display form, e.g. 'Mar 2021 – Present'")
@@ -119,7 +147,7 @@ class CVEntry(BaseModel):
 
 
 class CVSection(BaseModel):
-    heading: str
+    heading: str = ""
     entries: list[CVEntry] = Field(default_factory=list)
     items: list[str] = Field(
         default_factory=list,
@@ -128,7 +156,7 @@ class CVSection(BaseModel):
 
 
 class CVDocument(BaseModel):
-    name: str
+    name: str = ""
     headline: str = ""
     contact: list[str] = Field(default_factory=list, description="Email, phone, location as display strings")
     links: list[Link] = Field(default_factory=list)

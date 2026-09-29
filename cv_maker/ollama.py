@@ -14,13 +14,16 @@ import os
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from datetime import date
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import Field, ValidationError
 
-from .ai import CV_SYSTEM, AIError, Attachment
+from .ai import AIError, Attachment
+from .render import assemble_cv
 from .schema import (
     Achievement,
+    BaseModel,
     CVDocument,
     Education,
     Experience,
@@ -31,7 +34,7 @@ from .schema import (
     SkillGroup,
 )
 
-DEFAULT_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
+DEFAULT_HOST = "http://127.0.0.1:11434"
 DEFAULT_MODEL = os.environ.get("CV_MAKER_OLLAMA_MODEL", "qwen3:8b")
 DEFAULT_CONTEXT = int(os.environ.get("CV_MAKER_OLLAMA_CONTEXT", "16384"))
 REQUEST_TIMEOUT = 900  # CPU-only machines can take several minutes per request
@@ -57,6 +60,44 @@ Leave a list empty if nothing in it changed.
 most improve the CV. Can be empty.
 
 Today's date is {today}."""
+
+
+CV_WORDING_SYSTEM = """\
+You are an expert CV writer. Improve the wording of a person's CV using ONLY facts from
+their career memory. The layout is handled separately; you only supply the words.
+
+Return:
+- `headline`: a short professional title for the top of the CV (e.g. "Data Analyst"),
+  based on their roles and any target.
+- `summary`: 2-3 sentences on who they are and what they offer. No cliches.
+- `items`: one entry for EVERY id in the memory's experience, education, projects and
+  achievements:
+  - `include`: false only if the item is clearly irrelevant to the target. Usually true.
+  - `bullets`: 2-5 strong bullet points. Start each with an action verb (Built, Led,
+    Designed, Automated...). Keep every number and specific detail from the memory.
+    For education and achievements, bullets can be empty.
+- `skills`: skill lines like "Programming: Python, SQL", most relevant first.
+- `advice`: up to 3 specific tips for making the CV stronger, such as a missing number
+  for a named role.
+
+Never invent employers, dates, numbers, tools or results that are not in the memory.
+Follow every item in the memory's `preferences`.
+
+Today's date is {today}."""
+
+
+class ItemWording(BaseModel):
+    id: str = ""
+    include: bool = True
+    bullets: list[str] = Field(default_factory=list)
+
+
+class CVWording(BaseModel):
+    headline: str = ""
+    summary: str = ""
+    items: list[ItemWording] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    advice: list[str] = Field(default_factory=list)
 
 
 class MemoryUpdate(BaseModel):
@@ -171,9 +212,9 @@ def _attachments_as_text(attachments: list[Attachment]) -> str:
 class OllamaAI:
     local = True
 
-    def __init__(self, model: str = DEFAULT_MODEL, host: str = DEFAULT_HOST, num_ctx: int = DEFAULT_CONTEXT):
+    def __init__(self, model: str = DEFAULT_MODEL, host: str | None = None, num_ctx: int = DEFAULT_CONTEXT):
         self.model = model
-        self.host = host.rstrip("/")
+        self.host = (host or os.environ.get("OLLAMA_HOST") or DEFAULT_HOST).rstrip("/")
         if "://" not in self.host:
             self.host = "http://" + self.host
         self.num_ctx = num_ctx
@@ -199,7 +240,9 @@ class OllamaAI:
             except ValueError:
                 pass
             if e.code == 404 and "not found" in detail.lower():
-                raise AIError(f"The model '{self.model}' isn't downloaded yet. Run: ollama pull {self.model}") from e
+                raise AIError(
+                    f"The model '{self.model}' isn't downloaded yet. Download it in the AI model box."
+                ) from e
             raise AIError(f"Ollama error ({e.code}): {detail}") from e
         except (urllib.error.URLError, ConnectionError) as e:
             raise AIError(
@@ -218,7 +261,7 @@ class OllamaAI:
             "options": {"num_ctx": self.num_ctx, "temperature": 0.2},
         }
         last_error = None
-        for _ in range(2):  # small models occasionally produce invalid output; retry once
+        for _ in range(3):  # small models sometimes produce invalid output; try again
             try:
                 res = self._request("/api/chat", body)
             except AIError as e:
@@ -230,34 +273,69 @@ class OllamaAI:
                 raise AIError(
                     "The local model ran out of room. Set CV_MAKER_OLLAMA_CONTEXT higher (e.g. 32768)."
                 )
+            content = res.get("message", {}).get("content", "")
+            # Some models wrap the JSON in extra text or ``` fences; keep just the object.
+            start, end = content.find("{"), content.rfind("}")
+            if start != -1 and end > start:
+                content = content[start:end + 1]
             try:
-                return output.model_validate_json(res.get("message", {}).get("content", ""))
+                return output.model_validate_json(content)
             except ValidationError as e:
                 last_error = e
-        raise AIError(f"The local model returned something unreadable: {last_error}")
+        raise AIError(
+            f"The model '{self.model}' kept returning answers the app couldn't read. "
+            f"Try again, or pick a bigger model. ({last_error.error_count() if last_error else 0} problems)"
+        )
 
     # ---- interface used by the app -----------------------------------
+
+    def list_models(self) -> list[dict]:
+        """Models downloaded in Ollama, as [{'name': 'qwen3:4b', 'size': bytes}]."""
+        tags = self._request("/api/tags", timeout=3)
+        return [{"name": m.get("name", ""), "size": m.get("size", 0)} for m in tags.get("models", [])]
+
+    def pull(self, model: str, progress: Callable[[dict], None]) -> None:
+        """Download a model, calling `progress` with each status update from Ollama."""
+        req = urllib.request.Request(
+            self.host + "/api/pull",
+            data=json.dumps({"model": model, "stream": True}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with self._http.open(req, timeout=REQUEST_TIMEOUT) as res:
+                for line in res:
+                    if not line.strip():
+                        continue
+                    event = json.loads(line)
+                    if event.get("error"):
+                        raise AIError(f"Download failed: {event['error']}")
+                    progress(event)
+        except urllib.error.HTTPError as e:
+            raise AIError(f"Download failed ({e.code}): {e.read().decode(errors='replace')}") from e
+        except (urllib.error.URLError, ConnectionError) as e:
+            raise AIError("Can't reach Ollama. Start the Ollama app and try again.") from e
+        except TimeoutError as e:
+            raise AIError("The download stalled. Check your internet connection and try again.") from e
+        finally:
+            self._status_cache = None
 
     def status(self) -> dict:
         now = time.monotonic()
         if self._status_cache and now - self._status_cache[0] < 5:
             return self._status_cache[1]
-        info = {"label": f"Local model: {self.model} (free)", "ready": True, "message": "", "local": True}
+        info = {"label": f"{self.model} (free, on this computer)", "ready": True, "message": "", "local": True}
         try:
-            tags = self._request("/api/tags", timeout=2)
-            names = {m.get("name", "") for m in tags.get("models", [])}
-            wanted = self.model if ":" in self.model else f"{self.model}:latest"
-            if wanted not in names and self.model not in names:
-                info.update(ready=False, message=f"Model not downloaded. Run: ollama pull {self.model}")
+            if not is_installed(self.model, [m["name"] for m in self.list_models()]):
+                info.update(ready=False, message="This model isn't downloaded yet.")
         except AIError:
-            info.update(ready=False, message="Ollama isn't running. Start the Ollama app.")
+            info.update(ready=False, message="Ollama isn't running. Open the Ollama app.")
         self._status_cache = (now, info)
         return info
 
     def ingest(self, memory: Memory, text: str, attachments: list[Attachment] | None = None) -> IngestResult:
         files = _attachments_as_text(attachments or [])
         user = (
-            f"<current_memory>\n{memory.model_dump_json(indent=1)}\n</current_memory>\n\n"
+            f"<current_memory>\n{_compact(memory)}\n</current_memory>\n\n"
             + (f"{files}\n\n" if files else "")
             + f"<new_information>\n{text or '(see the attached file)'}\n</new_information>"
         )
@@ -269,10 +347,37 @@ class OllamaAI:
         )
 
     def build_cv(self, memory: Memory, target: str = "") -> CVDocument:
+        """The app lays the CV out from memory; the model only improves the wording."""
         request = (
-            f"<target>\n{target}\n</target>\nTailor the CV to this target."
+            f"<target>\n{target}\n</target>\nTailor the wording and selection to this target."
             if target.strip()
-            else "No specific target was given; write the strongest general CV."
+            else "No specific target was given; aim for the strongest general CV."
         )
-        user = f"<memory>\n{memory.model_dump_json(indent=1)}\n</memory>\n\n{request}"
-        return self._chat(CV_SYSTEM.format(today=date.today().isoformat()), user, CVDocument)
+        user = f"<memory>\n{_compact(memory)}\n</memory>\n\n{request}"
+        wording = self._chat(CV_WORDING_SYSTEM.format(today=date.today().isoformat()), user, CVWording)
+
+        known_ids = {x.id for section in (memory.experience, memory.education, memory.projects,
+                                          memory.achievements) for x in section}
+        items = [i for i in wording.items if i.id in known_ids]
+        excluded = {i.id for i in items if not i.include}
+        if excluded == known_ids:
+            excluded = set()  # never let a model empty the CV
+        return assemble_cv(
+            memory,
+            headline=wording.headline.strip(),
+            summary=wording.summary.strip(),
+            bullets={i.id: i.bullets for i in items if i.bullets},
+            exclude=excluded,
+            skills=[s for s in wording.skills if s.strip()],
+            advice=wording.advice[:5],
+        )
+
+
+def is_installed(model: str, installed: list[str]) -> bool:
+    wanted = model if ":" in model else f"{model}:latest"
+    return wanted in installed or model in installed
+
+
+def _compact(memory: Memory) -> str:
+    """Memory as JSON without empty fields, so small models have less to read."""
+    return memory.model_dump_json(indent=1, exclude_defaults=True)

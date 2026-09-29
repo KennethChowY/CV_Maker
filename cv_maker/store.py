@@ -104,7 +104,7 @@ class Store:
     # ---- settings -----------------------------------------------------
 
     def load_settings(self) -> dict:
-        defaults = {"auto_rebuild": True, "target": "", "page_size": "A4"}
+        defaults = {"auto_rebuild": True, "target": "", "page_size": "A4", "ai_backend": "", "ai_model": ""}
         if self.settings_path.exists():
             defaults.update(json.loads(self.settings_path.read_text(encoding="utf-8")))
         return defaults

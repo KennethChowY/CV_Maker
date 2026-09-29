@@ -21,6 +21,17 @@
 
   <div class="layout">
     <aside class="sidebar">
+      <section class="card model-card">
+        <h2>AI model</h2>
+        <select id="model-select" aria-label="AI model"></select>
+        <p id="model-note" class="hint model-note"></p>
+        <div id="model-download" class="model-download" hidden>
+          <button id="download-btn" class="primary wide">Download</button>
+          <div id="download-progress" class="progress" hidden><div class="progress-bar"></div></div>
+          <p id="download-status" class="hint"></p>
+        </div>
+      </section>
+
       <section class="card">
         <h2>Tell me something new</h2>
         <p class="hint">A new job, promotion, project, course, skill, a correction, or how you want the CV to read. Write it any way you like.</p>

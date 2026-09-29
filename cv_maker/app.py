@@ -10,46 +10,30 @@ from pathlib import Path
 from flask import Flask, Response, jsonify, request, send_from_directory
 from pydantic import ValidationError
 
-from .ai import AIError, Attachment, ClaudeAI
-from .ollama import OllamaAI
-from .render import basic_cv, render_cv
+from .ai import AIError, Attachment
+from .models import NO_AI_MESSAGE, ModelManager, build_ai, credentials_configured, default_choice
+from .render import basic_cv, render_cv, tidy_cv
 from .schema import Memory
 from .store import Store
 
 STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
-NO_AI = (
-    "No AI is set up. Install Ollama for a free local model, or set ANTHROPIC_API_KEY "
-    "to use Claude (see the README). You can still edit the memory directly."
-)
 EDIT_CONFLICT = (
     "Your CV has manual edits, so it wasn't rebuilt automatically. Use "
     "'Save edits to memory' to keep them, or 'Rebuild CV' to replace them."
 )
 
-
-def credentials_configured() -> bool:
-    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
-        return True
-    # A profile created with `ant auth login` is also picked up by the SDK.
-    return (Path.home() / ".config" / "anthropic").exists()
+__all__ = ["create_app", "select_ai", "credentials_configured", "clean_html", "main"]
 
 
 def select_ai(backend: str | None = None):
-    """Pick the AI backend: 'claude', 'ollama', 'none', or 'auto' (Claude if a key is set, else Ollama)."""
-    backend = (backend or os.environ.get("CV_MAKER_AI") or "auto").lower()
-    if backend == "none":
-        return None
-    if backend == "claude" or (backend == "auto" and credentials_configured()):
-        return ClaudeAI()
-    if backend in ("ollama", "local", "auto"):
-        return OllamaAI()
-    raise ValueError(f"Unknown AI backend '{backend}'. Use auto, claude, ollama or none.")
+    """Build the default backend: 'claude', 'ollama', 'none', or 'auto' (Claude if a key is set, else Ollama)."""
+    return build_ai(default_choice(backend))
 
 
 def ai_status(ai) -> dict:
     if ai is None:
-        return {"label": "No AI configured", "ready": False, "message": NO_AI, "local": False}
+        return {"label": "No AI model", "ready": False, "message": NO_AI_MESSAGE, "local": False}
     status = getattr(ai, "status", None)
     return status() if status else {"label": "AI", "ready": True, "message": "", "local": False}
 
@@ -67,22 +51,23 @@ _UNSET = object()
 
 
 def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | None = None) -> Flask:
-    """Create the app. Pass `ai` to use a specific backend object (None for no AI),
-    or leave it out to choose one from `backend` / the CV_MAKER_AI setting."""
+    """Create the app. Pass `ai` to pin a specific backend object (None for no AI);
+    otherwise the model is picked on the page, defaulting to `backend` / CV_MAKER_AI."""
     app = Flask(__name__, static_folder=None)
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     store = Store(data_dir or os.environ.get("CV_MAKER_DATA", "data"))
-    if ai is _UNSET:
-        ai = select_ai(backend)
+    models = ModelManager(store, fixed=ai, pinned=True) if ai is not _UNSET else ModelManager(store, backend=backend)
 
     def build(target: str) -> list[str]:
         memory = store.load_memory()
-        cv = ai.build_cv(memory, target) if ai else basic_cv(memory)
+        ai = models.current()
+        cv = tidy_cv(ai.build_cv(memory, target) if ai else basic_cv(memory))
         store.save_cv(cv, render_cv(cv), target)
         return cv.advice
 
     def state(**extra) -> Response:
         cv = store.load_cv()
+        ai = models.current()
         payload = {
             "memory": store.load_memory().model_dump(),
             "history": store.history(),
@@ -128,10 +113,26 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     def get_state():
         return state()
 
+    @app.get("/api/models")
+    def get_models():
+        return jsonify(models.catalog())
+
+    @app.post("/api/models/choose")
+    def choose_model():
+        body = request.get_json(silent=True) or {}
+        models.choose(body.get("backend", ""), body.get("model", ""))
+        return state()
+
+    @app.post("/api/models/download")
+    def download_model():
+        models.start_download((request.get_json(silent=True) or {}).get("model", ""))
+        return jsonify(models.catalog())
+
     @app.post("/api/ingest")
     def ingest():
+        ai = models.current()
         if not ai:
-            return error(NO_AI)
+            return error(NO_AI_MESSAGE)
         text = (request.form.get("text") or "").strip()
         attachments = [
             Attachment(f.filename or "upload", f.mimetype or "text/plain", f.read())
@@ -170,8 +171,9 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
 
     @app.post("/api/cv/learn")
     def learn_from_cv():
+        ai = models.current()
         if not ai:
-            return error(NO_AI)
+            return error(NO_AI_MESSAGE)
         text = ((request.get_json(silent=True) or {}).get("text") or "").strip()
         if not text:
             return error("The CV is empty.")
@@ -203,7 +205,9 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
 
     @app.post("/api/settings")
     def settings():
-        store.save_settings(request.get_json(silent=True) or {})
+        body = request.get_json(silent=True) or {}
+        # The model is changed through /api/models/choose, which checks it first.
+        store.save_settings({k: v for k, v in body.items() if k not in ("ai_backend", "ai_model")})
         return state()
 
     @app.get("/cv.html")
@@ -231,14 +235,13 @@ def main() -> None:
     parser.add_argument("--data", default=os.environ.get("CV_MAKER_DATA", "data"), help="Where memory is stored")
     parser.add_argument(
         "--ai", default=os.environ.get("CV_MAKER_AI", "auto"), choices=["auto", "claude", "ollama", "none"],
-        help="auto = Claude if ANTHROPIC_API_KEY is set, otherwise a free local model via Ollama",
+        help="Starting choice until one is picked on the page. "
+             "auto = Claude if ANTHROPIC_API_KEY is set, otherwise a free local model via Ollama",
     )
     args = parser.parse_args()
-    ai = select_ai(args.ai)
-    app = create_app(args.data, ai=ai)
-    status = ai_status(ai)
+    app = create_app(args.data, backend=args.ai)
     print(f"CV Maker running at http://{args.host}:{args.port}  (memory in {Path(args.data).resolve()})")
-    print(f"AI: {status['label']}" + (f"  -  {status['message']}" if status["message"] else ""))
+    print("Pick or change the AI model in the 'AI model' box on the page.")
     app.run(host=args.host, port=args.port, threaded=True)
 
 

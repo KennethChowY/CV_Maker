@@ -48,7 +48,7 @@ function render(next) {
 
   const status = $("ai-status");
   const ai = state.ai_status;
-  status.textContent = ai.label + (ai.message ? ` · ${ai.message}` : "");
+  status.textContent = `AI: ${ai.label}`;
   status.title = ai.message || "";
   status.classList.toggle("off", !ai.ready);
   $("add").disabled = !ai_enabled;
@@ -322,6 +322,132 @@ function switchTab(name) {
   ["cv", "memory", "history"].forEach((t) => { $(`tab-${t}`).hidden = t !== name; });
 }
 
+// ---------- AI model picker ----------
+
+let catalog = null;
+let catalogKey = "";
+let pendingModel = "";   // a picked model that is still downloading
+let downloadPoll = null;
+
+async function loadModels() {
+  try {
+    renderModels(await api("GET", "/api/models"));
+  } catch (err) {
+    showNotice(err.message, true);
+  }
+}
+
+function modelValue(backend, model = "") {
+  return `${backend}|${model}`;
+}
+
+function renderModels(next) {
+  catalog = next;
+  const sel = $("model-select");
+  const key = JSON.stringify([next.local, next.claude_available, next.choice, pendingModel]);
+  if (key !== catalogKey) {  // rebuilding the list closes it if open, so only do it on change
+    catalogKey = key;
+    const free = document.createElement("optgroup");
+    free.label = "Free, runs on this computer";
+    for (const m of next.local) {
+      const opt = new Option(`${m.name}${m.size ? ` (${m.size})` : ""}${m.installed ? "" : " · not downloaded"}`,
+                             modelValue("ollama", m.name));
+      free.append(opt);
+    }
+    const paid = document.createElement("optgroup");
+    paid.label = "Paid, best quality";
+    const claude = new Option(next.claude_available ? "Claude" : "Claude (needs an API key)", modelValue("claude"));
+    claude.disabled = !next.claude_available;
+    paid.append(claude);
+    const none = new Option("No AI (plain layout)", modelValue("none"));
+    sel.replaceChildren(free, paid, none);
+    sel.value = pendingModel
+      ? modelValue("ollama", pendingModel)
+      : modelValue(next.choice.backend, next.choice.backend === "ollama" ? next.choice.model : "");
+  }
+  sel.disabled = next.pinned;
+  updateModelNote();
+}
+
+function selected() {
+  const [backend, model] = $("model-select").value.split("|");
+  const local = backend === "ollama" ? catalog.local.find((m) => m.name === model) || { name: model, installed: false } : null;
+  return { backend, model, local };
+}
+
+function updateModelNote() {
+  const { backend, local } = selected();
+  const note = $("model-note");
+  let text = "";
+  let cls = "";
+  if (backend === "claude") {
+    [text, cls] = ["Fast and the best writing. Costs a few cents per update.", "ok"];
+  } else if (backend === "none") {
+    text = "Your CV is laid out straight from memory, without AI wording.";
+  } else if (!catalog.ollama_running) {
+    [text, cls] = ["Ollama isn't running. Open the Ollama app and this box will update.", "warn"];
+  } else if (local.installed) {
+    [text, cls] = [local.note || "Ready.", "ok"];
+  } else {
+    text = local.note || "";
+  }
+  note.textContent = text;
+  note.className = `hint model-note ${cls}`;
+
+  const needsDownload = backend === "ollama" && catalog.ollama_running && !local.installed;
+  $("model-download").hidden = !needsDownload;
+  if (!needsDownload) return;
+  const dl = catalog.downloads[local.name];
+  const downloading = dl?.state === "downloading";
+  const pct = dl?.total ? Math.round((100 * dl.completed) / dl.total) : 0;
+  $("download-btn").hidden = downloading;
+  $("download-btn").textContent = `Download ${local.name}${local.size ? ` (${local.size})` : ""}`;
+  $("download-progress").hidden = !downloading;
+  $("download-progress").firstElementChild.style.width = `${pct}%`;
+  $("download-status").textContent = !dl
+    ? "Downloads once. After that it works offline."
+    : downloading ? `Downloading… ${pct ? `${pct}%` : dl.status}` : dl.status;
+}
+
+async function onModelChange() {
+  const { backend, model, local } = selected();
+  if (local && !local.installed) {
+    pendingModel = model;  // switch to it once it's downloaded
+    updateModelNote();
+    return;
+  }
+  pendingModel = "";
+  try {
+    render(await api("POST", "/api/models/choose", { backend, model }));
+    showNotice("");
+  } catch (err) {
+    showNotice(err.message, true);
+  }
+  loadModels();
+}
+
+async function downloadModel() {
+  const { local } = selected();
+  pendingModel = local.name;
+  try {
+    renderModels(await api("POST", "/api/models/download", { model: local.name }));
+  } catch (err) {
+    showNotice(err.message, true);
+    return;
+  }
+  if (downloadPoll) return;
+  downloadPoll = setInterval(async () => {
+    const next = await api("GET", "/api/models").catch(() => null);
+    if (!next) return;
+    renderModels(next);
+    if (Object.values(next.downloads).some((d) => d.state === "downloading")) return;
+    clearInterval(downloadPoll);
+    downloadPoll = null;
+    const { local: now } = selected();
+    if (now?.installed && now.name === pendingModel) onModelChange();
+  }, 1000);
+}
+
 // ---------- Wiring ----------
 
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => switchTab(t.dataset.tab)));
@@ -365,4 +491,9 @@ $("json-save").addEventListener("click", async () => {
   if (await saveMemory(memory)) $("toggle-json").click();
 });
 
+$("model-select").addEventListener("change", onModelChange);
+$("download-btn").addEventListener("click", downloadModel);
+window.addEventListener("focus", () => { if (!downloadPoll) loadModels(); });
+
 api("GET", "/api/state").then(render).catch((err) => showNotice(err.message, true));
+loadModels();

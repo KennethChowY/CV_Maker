@@ -38,6 +38,7 @@ class FakeOllama:
     def __init__(self, replies, models=("qwen3:8b",), status=200):
         self.replies = list(replies)
         self.requests = []
+        self.models = list(models)
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -50,11 +51,23 @@ class FakeOllama:
                 self.wfile.write(data)
 
             def do_GET(self):
-                self._send(200, {"models": [{"name": m} for m in models]})
+                self._send(200, {"models": [{"name": m, "size": 2_500_000_000} for m in fake.models]})
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 fake.requests.append(body)
+                if self.path == "/api/pull":
+                    lines = [{"status": "pulling manifest"},
+                             {"status": "pulling abc", "total": 100, "completed": 50},
+                             {"status": "success"}]
+                    data = b"".join(json.dumps(x).encode() + b"\n" for x in lines)
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/x-ndjson")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    fake.models.append(body["model"])
+                    return
                 if status != 200:
                     self._send(status, {"error": f"model '{body['model']}' not found"})
                     return
@@ -144,14 +157,83 @@ def test_ingest_sends_schema_and_merges_reply(memory):
     assert "I joined Globex as Lead" in req["messages"][1]["content"]
 
 
-def test_invalid_output_is_retried_once(memory):
-    fake = FakeOllama(["not json", {"name": "Ada", "sections": []}])
+def test_invalid_output_is_retried(memory):
+    fake = FakeOllama(["not json", "still not json", {"headline": "Engineer"}])
     try:
         cv = OllamaAI(host=fake.url).build_cv(memory, "Data role")
     finally:
         fake.close()
-    assert cv.name == "Ada" and len(fake.requests) == 2
+    assert cv.name == "Ada" and cv.headline == "Engineer" and len(fake.requests) == 3
     assert "Data role" in fake.requests[0]["messages"][1]["content"]
+
+
+def test_gives_up_with_a_clear_message_after_repeated_bad_output(memory):
+    fake = FakeOllama(["x", "y", "z"])
+    try:
+        with pytest.raises(AIError, match="couldn't read"):
+            OllamaAI(host=fake.url).build_cv(memory)
+    finally:
+        fake.close()
+
+
+def test_build_cv_uses_model_wording_in_app_layout(memory):
+    wording = {
+        "headline": "Software Engineer",
+        "summary": "Engineer who builds things.",
+        "items": [
+            {"id": "exp-acme", "include": True, "bullets": ["Built X used by 3 teams"]},
+            {"id": "exp-old", "include": False, "bullets": []},
+            {"id": "made-up", "include": True, "bullets": ["Invented item"]},
+        ],
+        "skills": ["Programming: Python"],
+        "advice": ["Add numbers"],
+    }
+    # Wrapped in a code fence, as some models do.
+    fake = FakeOllama(["```json\n" + json.dumps(wording) + "\n```"])
+    try:
+        cv = OllamaAI(host=fake.url).build_cv(memory)
+    finally:
+        fake.close()
+    assert fake.requests[0]["format"]["title"] == "CVWording"
+    assert cv.headline == "Software Engineer" and cv.summary == "Engineer who builds things."
+    experience = next(s for s in cv.sections if s.heading == "Experience")
+    assert [e.subtitle for e in experience.entries] == ["Acme"]  # OldCo excluded, made-up id ignored
+    assert experience.entries[0].bullets == ["Built X used by 3 teams"]
+    assert next(s for s in cv.sections if s.heading == "Skills").items == ["Programming: Python"]
+    assert cv.advice == ["Add numbers"]
+
+
+def test_model_cannot_hide_everything(memory):
+    wording = {"items": [{"id": "exp-acme", "include": False}, {"id": "exp-old", "include": False}]}
+    fake = FakeOllama([wording])
+    try:
+        cv = OllamaAI(host=fake.url).build_cv(memory)
+    finally:
+        fake.close()
+    assert len(next(s for s in cv.sections if s.heading == "Experience").entries) == 2
+
+
+def test_lenient_parsing_of_sloppy_model_output():
+    update = MemoryUpdate.model_validate({
+        "profile": {"name": None, "phone": 12345},
+        "upsert_experience": [{"id": "e1", "role": "Dev", "highlights": "Built one thing", "end": None}],
+        "changes": "Added a job",
+    })
+    assert update.profile.phone == "12345" and update.profile.name == ""
+    assert update.upsert_experience[0].highlights == ["Built one thing"]
+    assert update.changes == ["Added a job"]
+
+
+def test_pull_reports_progress():
+    fake = FakeOllama([], models=())
+    events = []
+    try:
+        OllamaAI(host=fake.url).pull("qwen3:4b", events.append)
+    finally:
+        fake.close()
+    assert events[1] == {"status": "pulling abc", "total": 100, "completed": 50}
+    assert events[-1]["status"] == "success"
+    assert fake.requests[0] == {"model": "qwen3:4b", "stream": True}
 
 
 def test_pdf_attachment_is_converted_to_text(memory):
@@ -178,8 +260,8 @@ def test_helpful_errors_when_ollama_missing_or_model_not_pulled(memory):
     fake = FakeOllama([], models=("llama3.2:latest",), status=404)
     try:
         ai = OllamaAI(host=fake.url)
-        assert "ollama pull qwen3:8b" in ai.status()["message"]
-        with pytest.raises(AIError, match="ollama pull qwen3:8b"):
+        assert "isn't downloaded" in ai.status()["message"]
+        with pytest.raises(AIError, match="qwen3:8b' isn't downloaded"):
             ai.build_cv(memory)
     finally:
         fake.close()

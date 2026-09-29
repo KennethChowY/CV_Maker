@@ -82,6 +82,15 @@ textarea:focus, button:focus-visible, select:focus-visible { outline: 2px solid 
 .file-names { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .result { border-color: #bcd0f0; background: #f7faff; }
+
+.model-card select { width: 100%; margin-top: 4px; }
+.model-note { margin: 6px 0 0; }
+.model-note.warn { color: var(--warn-ink); }
+.model-note.ok::before { content: "● "; color: #12805c; }
+.model-download { margin-top: 2px; }
+.model-download .hint { margin: 6px 0 0; }
+.progress { height: 6px; background: var(--accent-soft); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+.progress-bar { height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
 .questions li { cursor: pointer; color: var(--accent); }
 .questions li:hover { text-decoration: underline; }
 

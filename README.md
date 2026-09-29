@@ -71,39 +71,36 @@ before starting the app. Your prompt shows `(.venv)` when it's active.
 ### Option A: free local model (Ollama)
 
 1. Install Ollama from https://ollama.com/download and open it.
-2. Download the model once (about 5 GB):
-   ```bash
-   ollama pull qwen3:8b
-   ```
-3. Start the app:
+2. Start the app:
    ```bash
    python -m cv_maker        # then open http://127.0.0.1:5000
    ```
+3. In the **AI model** box at the top left, pick a model. If it isn't
+   downloaded yet, click **Download**; the app switches to it when the download
+   finishes. Your choice is remembered.
 
-The top-right of the page shows **Local model: qwen3:8b (free)** when it's working,
-or tells you what's missing (Ollama not running, model not downloaded).
+| Model | Download | Notes |
+| --- | --- | --- |
+| `qwen3:4b` | ~2.5 GB | Fast and good. Best for most laptops. |
+| `llama3.2` | ~2 GB | Fastest, simpler writing. |
+| `qwen3:8b` | ~5.2 GB | Best free writing. Needs a computer with 16 GB of memory. |
+
+Any other model you've downloaded with Ollama also appears in the list.
 
 What to expect:
 
-- **Hardware.** `qwen3:8b` needs about 8 GB of free memory, so a computer with
-  16 GB is comfortable. It runs much faster on a computer with a graphics
-  card or Apple Silicon (M1 or later); on an older laptop without one, each
-  update can take a few minutes.
-- **Quality.** Local models are good at filing facts into memory but write
-  weaker CVs than Claude. Check the result, and fix wording directly on the CV.
-- **A different model.** Use a smaller one on a weak computer or a bigger one
-  on a strong one:
-  ```bash
-  ollama pull qwen3:4b
-  CV_MAKER_OLLAMA_MODEL=qwen3:4b python -m cv_maker
-  ```
-  On Windows, run `set CV_MAKER_OLLAMA_MODEL=qwen3:4b` first, then
-  `python -m cv_maker`.
-
-With a local model the memory is updated a safer way: the model only reports
-what changed and the app merges it, so an update can't accidentally wipe
-existing entries. Attached PDFs are converted to text first, so scanned
-(image-only) PDFs won't work; paste the text instead.
+- **Speed.** Local models run much faster on Apple Silicon (M1 or later) or a
+  computer with a graphics card. If a model is slow, pick a smaller one; a
+  model too big for your computer's memory gets very slow.
+- **Quality.** Local models write weaker CVs than Claude. So with a local model
+  the app lays out the CV itself (newest first, consistent formatting) and the
+  model only improves the wording. Check the result, and fix wording directly
+  on the CV.
+- **Safety of your memory.** With a local model, the model only reports what
+  changed and the app merges it, so an update can't accidentally wipe existing
+  entries.
+- **PDFs.** Attached PDFs are converted to text first, so scanned (image-only)
+  PDFs won't work; paste the text instead.
 
 ### Option B: Claude (paid, best quality)
 
@@ -112,23 +109,26 @@ export ANTHROPIC_API_KEY=sk-ant-...     # from https://console.anthropic.com
 python -m cv_maker
 ```
 
-Claude is used automatically whenever `ANTHROPIC_API_KEY` is set. To force a
-choice, use `--ai`:
+With the key set, **Claude** becomes available in the AI model box. You can
+switch between Claude and a free local model there at any time; your memory
+and CV carry over.
+
+`--ai` sets the starting choice before anything has been picked on the page:
 
 ```bash
-python -m cv_maker --ai ollama    # always use the local model
-python -m cv_maker --ai claude    # always use Claude
-python -m cv_maker --ai none      # no AI: edit memory by hand, plain CV layout
+python -m cv_maker --ai ollama    # start with the local model
+python -m cv_maker --ai claude    # start with Claude
+python -m cv_maker --ai none      # start with no AI: plain layout, edit memory by hand
 ```
 
 ### Options
 
 | Flag / env var | Default | Meaning |
 | --- | --- | --- |
-| `--ai` / `CV_MAKER_AI` | `auto` | `auto`, `claude`, `ollama` or `none` |
+| `--ai` / `CV_MAKER_AI` | `auto` | Starting choice: `auto`, `claude`, `ollama` or `none` |
 | `--data` / `CV_MAKER_DATA` | `data/` | Where your memory and CV are stored |
 | `--port` | `5000` | Port to serve on |
-| `CV_MAKER_OLLAMA_MODEL` | `qwen3:8b` | Local model to use |
+| `CV_MAKER_OLLAMA_MODEL` | `qwen3:8b` | Starting local model, before one is picked on the page |
 | `CV_MAKER_OLLAMA_CONTEXT` | `16384` | Local model context size; raise it if you see "ran out of room" |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Where Ollama is running |
 | `CV_MAKER_MODEL` | `claude-opus-5-5` | Claude model to use |
@@ -165,6 +165,7 @@ pytest
 | `cv_maker/store.py` | File storage, history, snapshots and undo |
 | `cv_maker/ai.py` | Claude backend and the CV-writing prompt |
 | `cv_maker/ollama.py` | Local-model backend (Ollama) and the change-merging logic |
+| `cv_maker/models.py` | The AI model picker: choosing, downloading and switching models |
 | `cv_maker/render.py`, `templates/cv.html.j2` | CV HTML, plus the no-AI fallback layout |
 | `cv_maker/app.py` | Flask routes |
 | `cv_maker/static/` | Browser UI (`cv.css` is the CV's look, for both screen and print) |
