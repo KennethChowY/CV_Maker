@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from html import escape
 from pathlib import Path
 
@@ -89,25 +90,74 @@ def page_document(body: str, *, title: str, template: str, accent: str, page_siz
     )
 
 
-def html_to_pdf(document: str, browser: str | None = None) -> bytes:
+PDF_TIMEOUT = 45  # seconds; a CV normally takes 2-5
+PDF_FAILED = ("The browser couldn't make the PDF{why}. The print window opens instead: choose "
+              "'Save as PDF'. (Quitting and reopening Chrome, or restarting the computer, usually fixes this.)")
+
+# An invisible Chrome with a fresh profile must never wait for anything a person would have to click:
+# the macOS keychain prompt, first-run screens, sign-in, updates, extensions or background downloads.
+QUIET_FLAGS = [
+    "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--use-mock-keychain",
+    "--password-store=basic", "--disable-extensions", "--disable-sync", "--disable-background-networking",
+    "--disable-component-update", "--disable-default-apps", "--no-service-autorun", "--mute-audio",
+    "--hide-scrollbars", "--disable-features=Translate,MediaRouter,OptimizationHints,DialMediaRouteProvider",
+    "--run-all-compositor-stages-before-draw", "--no-pdf-header-footer", "--print-to-pdf-no-header",
+]
+
+
+def _pdf_complete(path: Path) -> bool:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    return data.startswith(b"%PDF") and data.rstrip().endswith(b"%%EOF")
+
+
+def _stop(proc: subprocess.Popen) -> None:
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=3)
+
+
+def html_to_pdf(document: str, browser: str | None = None, timeout: float | None = None) -> bytes:
+    """Print the page to PDF with a hidden Chrome-based browser.
+
+    Chrome sometimes finishes the PDF and then doesn't quit (seen on macOS), so this watches for the
+    finished file and stops the browser itself, instead of waiting for it to exit."""
     browser = browser or find_browser()
     if not browser:
         raise ExportError("No Chrome, Edge or Brave browser found to make the PDF.")
+    timeout = timeout or PDF_TIMEOUT
     with tempfile.TemporaryDirectory() as tmp:
         src, out = Path(tmp, "page.html"), Path(tmp, "page.pdf")
         src.write_text(document, encoding="utf-8")
-        cmd = [browser, "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
-               "--no-pdf-header-footer", "--print-to-pdf-no-header", f"--user-data-dir={Path(tmp, 'profile')}",
-               f"--print-to-pdf={out}", src.as_uri()]
+        cmd = [browser, *QUIET_FLAGS, f"--user-data-dir={Path(tmp, 'profile')}", f"--print-to-pdf={out}", src.as_uri()]
         if sys.platform.startswith("linux") and hasattr(os, "geteuid") and os.geteuid() == 0:
             cmd.insert(1, "--no-sandbox")  # Chrome refuses to run sandboxed as root on Linux
         try:
-            subprocess.run(cmd, capture_output=True, timeout=90, check=False)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            raise ExportError(f"The browser couldn't make the PDF: {e}") from e
-        if not out.exists() or out.stat().st_size == 0:
-            raise ExportError("The browser couldn't make the PDF.")
-        return out.read_bytes()
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    stdin=subprocess.DEVNULL)
+        except OSError as e:
+            raise ExportError(PDF_FAILED.format(why=f" ({e.strerror or e})")) from e
+        deadline, last_size = time.monotonic() + timeout, -1
+        try:
+            while time.monotonic() < deadline:
+                exited = proc.poll() is not None
+                size = out.stat().st_size if out.exists() else -1
+                # Done when the file is a complete PDF that has stopped growing (or Chrome has quit).
+                if size > 0 and (exited or size == last_size) and _pdf_complete(out):
+                    return out.read_bytes()
+                if exited and size <= 0:
+                    raise ExportError(PDF_FAILED.format(why=""))
+                last_size = size
+                time.sleep(0.25)
+            raise ExportError(PDF_FAILED.format(why=f" (it took longer than {int(timeout)} seconds)"))
+        finally:
+            _stop(proc)
 
 
 # ---- Word --------------------------------------------------------------

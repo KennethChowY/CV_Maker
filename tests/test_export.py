@@ -102,3 +102,42 @@ def test_ats_pdf_keeps_dates_next_to_titles(client, monkeypatch):
     assert res.status_code == 200 and "ATS-safe" in res.headers["Content-Disposition"]
     text = "".join(page.get_text() for page in pymupdf.open(stream=res.data, filetype="pdf"))
     assert "Engineer | 2020 – Present" in text and "Acme, London" in text
+
+
+def _fake_browser(tmp_path, body: str):
+    """A stand-in for Chrome: a script that receives the same arguments."""
+    import stat
+    import sys
+    script = tmp_path / "fake-chrome"
+    script.write_text(f"#!{sys.executable}\nimport sys, time\n"
+                      "out = next(a.split('=', 1)[1] for a in sys.argv if a.startswith('--print-to-pdf='))\n" + body)
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    return str(script)
+
+
+def test_pdf_is_returned_even_if_the_browser_never_quits(tmp_path):
+    import time
+    from cv_maker.export import html_to_pdf
+    browser = _fake_browser(tmp_path, "open(out, 'wb').write(b'%PDF-1.4 fake %%EOF\\n')\ntime.sleep(60)\n")
+    start = time.monotonic()
+    assert html_to_pdf("<p>x</p>", browser=browser, timeout=20).startswith(b"%PDF")
+    assert time.monotonic() - start < 5  # didn't wait for the browser to exit
+
+
+def test_stuck_or_failing_browser_gives_a_clear_error_quickly(tmp_path):
+    import time
+    import pytest
+    from cv_maker.export import ExportError, html_to_pdf
+    stuck = _fake_browser(tmp_path, "time.sleep(60)\n")
+    start = time.monotonic()
+    with pytest.raises(ExportError, match="print window"):
+        html_to_pdf("<p>x</p>", browser=stuck, timeout=2)
+    assert time.monotonic() - start < 8
+    failing = _fake_browser(tmp_path, "sys.exit(1)\n")
+    with pytest.raises(ExportError, match="Save as PDF"):
+        html_to_pdf("<p>x</p>", browser=failing, timeout=10)
+
+
+def test_browser_never_waits_for_the_keychain():
+    from cv_maker.export import QUIET_FLAGS
+    assert "--use-mock-keychain" in QUIET_FLAGS and "--password-store=basic" in QUIET_FLAGS

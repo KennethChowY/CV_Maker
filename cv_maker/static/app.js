@@ -611,6 +611,17 @@ async function downloadFile(url, busyMessage) {
   });
 }
 
+// When the PDF can't be made in the background, the browser's own print window can still save one.
+function pdfFallback(kind) {
+  const message = $("notice").textContent;
+  if (/No Chrome/.test(message)) {
+    showNotice("No Chrome, Edge or Brave browser was found, so the print window opened instead. Choose 'Save as PDF'.");
+  } else if (!/print window/.test(message)) {
+    return;
+  }
+  printFallback(kind);
+}
+
 function printFallback(kind) {
   const name = state.memory.profile.name || "My";
   const original = document.title;
@@ -635,10 +646,7 @@ window.addEventListener("afterprint", () => {
 async function downloadPdf() {
   const scale = parseFloat(getComputedStyle($("cv")).getPropertyValue("--cv-scale")) || 1;
   const ok = await downloadFile(`/api/export/cv.pdf?scale=${scale}`, "Making your PDF…");
-  if (!ok && $("notice").textContent.includes("No Chrome")) {
-    showNotice("No Chrome, Edge or Brave browser was found, so the print window opened instead. Choose 'Save as PDF'.");
-    printFallback("CV");
-  }
+  if (!ok) pdfFallback("CV");
 }
 
 function switchTab(name) {
@@ -1441,7 +1449,8 @@ $("pdf").addEventListener("click", downloadPdf);
 $("docx").addEventListener("click", () => downloadFile("/api/export/cv.docx", "Making your Word document…"));
 $("pdf-ats").addEventListener("click", () => {
   const scale = parseFloat(getComputedStyle($("cv")).getPropertyValue("--cv-scale")) || 1;
-  downloadFile(`/api/export/cv.pdf?style=ats&scale=${scale}`, "Making your ATS-safe PDF…");
+  downloadFile(`/api/export/cv.pdf?style=ats&scale=${scale}`, "Making your ATS-safe PDF…")
+    .then((ok) => { if (!ok) pdfFallback("CV"); });
 });
 $("txt").addEventListener("click", () => downloadFile("/api/export/cv.txt", "Making your plain-text CV…"));
 function toggleDownloads(open) {

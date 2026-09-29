@@ -194,10 +194,7 @@ $("letter-write").addEventListener("click", writeLetter);
 $("letter-pdf").addEventListener("click", async () => {
   await flushLetter();
   const ok = await downloadFile("/api/export/letter.pdf", "Making your PDF…");
-  if (!ok && $("notice").textContent.includes("No Chrome")) {
-    showNotice("No Chrome, Edge or Brave browser was found, so the print window opened instead. Choose 'Save as PDF'.");
-    printFallback("Cover Letter");
-  }
+  if (!ok) pdfFallback(state.active.kind === "phd" ? "Statement of Purpose" : "Cover Letter");
 });
 $("letter-docx").addEventListener("click", async () => {
   await flushLetter();
