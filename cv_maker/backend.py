@@ -19,7 +19,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from .ai import AIError, Attachment
+from .common import AIError, Attachment
 from .render import assemble_cv
 from .schema import (
     Achievement,

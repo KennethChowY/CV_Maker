@@ -84,19 +84,17 @@ def default_choice(backend: str | None = None, store: Store | None = None) -> di
 
 
 def build_ai(choice: dict, api: dict | None = None, cache_dir: Path | None = None):
+    cache = cache_dir / "wording_cache.json" if cache_dir else None
     if choice["backend"] in ("api", "claude"):
-        api = api or {}
-        provider = api.get("provider") or "anthropic"
         if not api:
             return None
+        provider = api.get("provider") or "anthropic"
         if PROVIDERS.get(provider, {}).get("kind") == "anthropic":
             client = anthropic.Anthropic(api_key=api["key"]) if api.get("key") else None
-            return ClaudeAI(client, model=choice["model"] or ANTHROPIC_DEFAULT_MODEL)
-        cache = cache_dir / "wording_cache.json" if cache_dir else None
+            return ClaudeAI(client, model=choice["model"] or ANTHROPIC_DEFAULT_MODEL, cache_path=cache)
         return OpenAICompatibleAI(api.get("base_url") or PROVIDERS[provider]["base_url"], api["key"],
                                   model=choice["model"], provider=provider, cache_path=cache)
     if choice["backend"] == "ollama":
-        cache = cache_dir / "wording_cache.json" if cache_dir else None
         return OllamaAI(model=choice["model"] or DEFAULT_MODEL, cache_path=cache)
     return None
 

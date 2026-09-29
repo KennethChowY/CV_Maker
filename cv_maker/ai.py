@@ -1,129 +1,48 @@
-"""Claude-powered steps: folding new information into memory, and writing the CV."""
+"""Models reached with an Anthropic API key.
+
+They work like every other backend (see backend.py): the model reports what changed in the
+memory and supplies the CV's wording, and the app does the merging and the layout. The one
+difference is that Anthropic's API can read PDFs directly, so scanned CVs can be imported.
+"""
 
 from __future__ import annotations
 
 import base64
 import os
-from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 
 import anthropic
 
-from .schema import CVDocument, IngestResult, Memory
-from .writing import (
-    BulletSuggestions,
-    CoverLetter,
-    clean_suggestions,
-    improve_prompt,
-    letter_prompt,
-    memory_for_prompt,
+from .backend import (
+    INGEST_SYSTEM,
+    ChatBackend,
+    CVWording,
+    MemoryUpdate,
+    _compact,
+    apply_update,
+    pdf_to_text,
 )
+from .common import AIError, Attachment
+from .schema import BaseModel, IngestResult, Memory
+from .writing import BulletSuggestions, CoverLetter
+
+__all__ = ["AIError", "Attachment", "ClaudeAI", "MODEL"]
 
 MODEL = os.environ.get("CV_MAKER_MODEL", "claude-opus-5-5")
 
-INGEST_SYSTEM = """\
-You maintain a person's career memory: a structured, complete record of everything \
-they have told you about their work, education, projects, skills and goals. It is \
-the source of truth from which their CV is written, so it should hold more detail \
-than any single CV would.
-
-You receive the current memory and a new piece of information. Return the complete \
-updated memory.
-
-How to update:
-- Keep everything already in the memory unless the new information corrects or \
-removes it. Never drop items just because they seem minor.
-- Merge instead of duplicating: if the input is about an existing job, degree or \
-project, update that item and keep its id. New items get a new short, descriptive \
-id (e.g. "exp-acme-2021").
-- Record facts only. Do not invent employers, dates, numbers or skills. Keep the \
-person's own numbers and specifics; they are what makes a CV strong.
-- When a role ends because a new one starts (e.g. a promotion or new job), set the \
-previous role's end date if it can be inferred.
-- Keep separate roles separate. A different organisation, department or lab is a \
-different item, even if the person held both roles at the same time. Never move \
-highlights from one item to another.
-- Personal, school and hobby projects go in `projects`, not `experience`. Papers, \
-posters and conference talks are achievements of kind "publication" or "talk".
-- Text in square brackets that is an unfilled template gap, such as [month year] or \
-[rating], is not a fact. Don't store it; ask for the real value in `questions`.
-- Put standing instructions about the CV itself (tone, length, spelling, what to \
-emphasise) in `preferences`, and goals such as target roles in `notes`.
-- In `changes`, list what you changed in a few words each.
-- In `questions`, ask for at most three things that are missing and would most \
-improve the CV, such as dates, measurable results or technologies used. Leave it \
-empty if nothing important is missing.
-
-Today's date is {today}."""
-
-CV_SYSTEM = """\
-You are an expert CV writer and recruiter. Using the person's career memory, write \
-the strongest possible CV for them.
-
-Principles:
-- Truthful: use only facts present in the memory. Never invent numbers, titles, \
-employers, dates or skills. You may rephrase and tighten, but not embellish.
-- Relevant: if a target role or job description is given, select and order content \
-for it and mirror its terminology where the person genuinely has the experience. \
-Otherwise aim at the direction their career is heading, using any goals in `notes`.
-- Achievement-focused: bullets start with a strong verb and say what was done and \
-the result, with numbers where the memory has them. Usually 2–5 bullets per role; \
-more for recent, relevant roles and fewer for old or unrelated ones.
-- Concise: aim for one page for early-career profiles and at most two pages \
-otherwise. Leave out weak or irrelevant material rather than padding.
-- ATS-friendly: standard section headings (Experience, Education, Projects, \
-Skills, and so on), reverse-chronological order, and dates like "Mar 2021 – Present".
-- Summary: two or three sentences on who they are and what they offer, with no \
-clichés.
-- Leave out unfilled template gaps in square brackets, such as [rating]; mention them \
-in `advice` instead.
-- Follow every item in the memory's `preferences`; they override these defaults.
-
-Put the sections in the order that best sells this person. Use `entries` for \
-sections made of roles, degrees or projects, and `items` for list sections such as \
-skills (e.g. "Languages: Python, Go, SQL"). In `advice`, give up to five specific \
-suggestions for making the CV stronger, such as a missing metric for a named role. \
-These are shown to the person and do not appear on the CV.
-
-Today's date is {today}."""
+# How hard the model should think for each kind of request.
+EFFORT = {MemoryUpdate: "medium", CVWording: "high", BulletSuggestions: "low", CoverLetter: "medium"}
 
 
-class AIError(RuntimeError):
-    pass
-
-
-@dataclass
-class Attachment:
-    filename: str
-    media_type: str
-    data: bytes
-
-
-def _attachment_blocks(attachments: list[Attachment]) -> list[dict]:
-    blocks: list[dict] = []
-    for a in attachments:
-        if a.media_type == "application/pdf":
-            blocks.append({
-                "type": "document",
-                "source": {
-                    "type": "base64",
-                    "media_type": "application/pdf",
-                    "data": base64.standard_b64encode(a.data).decode("ascii"),
-                },
-                "title": a.filename,
-            })
-        else:
-            text = a.data.decode("utf-8", errors="replace")
-            blocks.append({"type": "text", "text": f"<file name=\"{a.filename}\">\n{text}\n</file>"})
-    return blocks
-
-
-class ClaudeAI:
+class ClaudeAI(ChatBackend):
     local = False
 
-    def __init__(self, client: anthropic.Anthropic | None = None, model: str = MODEL):
+    def __init__(self, client: anthropic.Anthropic | None = None, model: str = MODEL,
+                 cache_path: str | Path | None = None):
         self.client = client or anthropic.Anthropic()
         self.model = model
+        self.cache_path = Path(cache_path) if cache_path else None
 
     def status(self) -> dict:
         return {"label": f"{self.model} (API key)", "ready": True, "message": "", "local": False}
@@ -162,44 +81,30 @@ class ClaudeAI:
             raise AIError("The model returned a response that could not be read.")
         return response.parsed_output
 
-    def ingest(self, memory: Memory, text: str, attachments: list[Attachment] | None = None) -> IngestResult:
-        content = [
-            {"type": "text", "text": f"<current_memory>\n{memory.model_dump_json(indent=2)}\n</current_memory>"},
-            *_attachment_blocks(attachments or []),
-            {"type": "text", "text": f"<new_information>\n{text or '(see attached file)'}\n</new_information>"},
-        ]
-        return self._parse(
-            system=INGEST_SYSTEM.format(today=date.today().isoformat()),
-            content=content,
-            output_format=IngestResult,
-            effort="medium",
-        )
-
-    def build_cv(self, memory: Memory, target: str = "") -> CVDocument:
-        request = (
-            f"<target>\n{target}\n</target>\nTailor the CV to this target."
-            if target.strip()
-            else "No specific target was given; write the strongest general CV."
-        )
-        content = [
-            {"type": "text", "text": f"<memory>\n{memory.model_dump_json(indent=2)}\n</memory>"},
-            {"type": "text", "text": request},
-        ]
-        return self._parse(
-            system=CV_SYSTEM.format(today=date.today().isoformat()),
-            content=content,
-            output_format=CVDocument,
-            effort="high",
-        )
-
-    def improve_bullet(self, memory: Memory, bullet: str, mode: str, target: str = "",
-                       instruction: str = "") -> list[str]:
-        system, user = improve_prompt(memory_for_prompt(memory), bullet, mode, target, instruction)
-        result = self._parse(system=system, content=[{"type": "text", "text": user}],
-                             output_format=BulletSuggestions, effort="low")
-        return clean_suggestions(result, bullet)
-
-    def write_letter(self, memory: Memory, target: str, company: str, role: str, tone: str) -> CoverLetter:
-        system, user = letter_prompt(memory_for_prompt(memory), target, company, role, tone)
+    def _chat(self, system: str, user: str, output: type[BaseModel]):
         return self._parse(system=system, content=[{"type": "text", "text": user}],
-                           output_format=CoverLetter, effort="medium")
+                           output_format=output, effort=EFFORT.get(output, "medium"))
+
+    def ingest(self, memory: Memory, text: str, attachments: list[Attachment] | None = None) -> IngestResult:
+        """Like other backends, but PDFs without extractable text (scans) are sent for the model to read."""
+        content: list[dict] = [{"type": "text", "text": f"<current_memory>\n{_compact(memory)}\n</current_memory>"}]
+        for a in attachments or []:
+            extracted = ""
+            if a.media_type == "application/pdf":
+                try:
+                    extracted = pdf_to_text(a.data)
+                except AIError:
+                    extracted = ""
+                if not extracted:
+                    content.append({"type": "document", "title": a.filename, "source": {
+                        "type": "base64", "media_type": "application/pdf",
+                        "data": base64.standard_b64encode(a.data).decode("ascii")}})
+                    continue
+            else:
+                extracted = a.data.decode("utf-8", errors="replace")
+            content.append({"type": "text", "text": f'<file name="{a.filename}">\n{extracted}\n</file>'})
+        content.append({"type": "text", "text": f"<new_information>\n{text or '(see the attached file)'}\n</new_information>"})
+        update = self._parse(system=INGEST_SYSTEM.format(today=date.today().isoformat()), content=content,
+                             output_format=MemoryUpdate, effort=EFFORT[MemoryUpdate])
+        return IngestResult(memory=apply_update(memory, update), changes=update.changes or ["Updated memory"],
+                            questions=update.questions[:3])

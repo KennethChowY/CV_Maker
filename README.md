@@ -145,13 +145,8 @@ What to expect:
   model too big for your computer's memory gets very slow. The app keeps the
   model loaded between updates, and a rebuild only rewrites entries that
   changed, so most rebuilds after the first are much quicker.
-- **Quality.** Local models write weaker CVs than hosted models. So with a local model
-  the app lays out the CV itself (newest first, consistent formatting) and the
-  model only improves the wording. Check the result, and fix wording directly
-  on the CV.
-- **Safety of your memory.** With a local model, the model only reports what
-  changed and the app merges it, so an update can't accidentally wipe existing
-  entries.
+- **Quality.** Local models write weaker CVs than hosted models. Check the
+  result, and fix wording directly on the CV.
 - **PDFs.** Attached PDFs are converted to text first, so scanned (image-only)
   PDFs won't work; paste the text instead. Word files work with every model.
 
@@ -188,6 +183,15 @@ python -m cv_maker --ai none      # start with no AI: plain layout, edit memory 
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Where Ollama is running |
 | `CV_MAKER_MODEL` | `claude-opus-5-5` | Default model for an Anthropic key |
 
+## How the AI is used
+
+Whichever model you pick, the app lays out the CV itself (newest first,
+consistent section names and formatting) and the model only writes the wording:
+the summary, bullet points and skills. When memory is updated, the model only
+reports what changed and the app merges it, so an update can't accidentally
+wipe existing entries. Wording for entries that haven't changed is reused, so
+rebuilds are quicker and, with an API key, cheaper.
+
 ## Your data
 
 Everything is stored as plain files in the data directory:
@@ -221,8 +225,8 @@ pytest
 | --- | --- |
 | `cv_maker/schema.py` | Memory and CV data models (also the structured-output schemas) |
 | `cv_maker/store.py` | File storage, history, snapshots and undo |
-| `cv_maker/ai.py` | Anthropic-key backend and the CV-writing prompt |
-| `cv_maker/backend.py` | Shared logic for chat-style models: memory updates, CV wording and its cache |
+| `cv_maker/backend.py` | Shared logic for every model: prompts, memory updates, CV wording and its cache |
+| `cv_maker/ai.py` | Anthropic-key backend (also reads scanned PDFs) |
 | `cv_maker/api_models.py`, `providers.py` | API keys for OpenAI-compatible services, and recognising which service a key is for |
 | `cv_maker/writing.py` | Prompts shared by both backends: bullet rewrites and cover letters |
 | `cv_maker/export.py` | PDF (via a local Chrome-based browser) and Word downloads |
@@ -232,5 +236,5 @@ pytest
 | `cv_maker/app.py` | Flask routes |
 | `cv_maker/static/` | Browser UI: `app.js` (main), `assist.js` (bullet help, cover letter), `cv.css` (the CV's look on screen and in print) |
 
-To change how the CV looks, edit `cv_maker/static/cv.css`. To change what makes
-a "best" CV, edit `CV_SYSTEM` in `cv_maker/ai.py`.
+To change how the CV looks, edit `cv_maker/static/cv.css`. To change how the CV
+is worded, edit `CV_WORDING_SYSTEM` in `cv_maker/backend.py`.

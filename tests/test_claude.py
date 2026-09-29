@@ -11,8 +11,9 @@ from cv_maker.schema import Memory
 class FakeAnthropic:
     """Rejects requests with an effort setting (like an older model would), accepts the rest."""
 
-    def __init__(self):
+    def __init__(self, reply=None):
         self.bodies = []
+        self.reply = reply or {"headline": "Analyst"}
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -23,7 +24,7 @@ class FakeAnthropic:
                     code, payload = 400, {"type": "error", "error": {"type": "invalid_request_error",
                                                                      "message": "effort is not supported on this model"}}
                 else:
-                    out = {"name": "Ada", "sections": []}
+                    out = fake.reply
                     code, payload = 200, {"id": "msg_1", "type": "message", "role": "assistant", "model": body["model"],
                                           "content": [{"type": "text", "text": json.dumps(out)}],
                                           "stop_reason": "end_turn", "stop_sequence": None,
@@ -52,6 +53,26 @@ def test_older_models_are_retried_without_optional_settings(monkeypatch):
         cv = ClaudeAI(client, model="claude-older-model").build_cv(Memory(), "")
     finally:
         fake.server.shutdown()
-    assert cv.name == "Ada" and len(fake.bodies) == 2
+    assert cv.headline == "Analyst" and len(fake.bodies) == 2
     assert "fallbacks" in fake.bodies[0] and "fallbacks" not in fake.bodies[1]
     assert fake.bodies[1]["model"] == "claude-older-model"
+
+
+def test_scanned_pdfs_are_sent_for_the_model_to_read(monkeypatch):
+    from test_ollama import make_pdf
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        monkeypatch.delenv(var, raising=False)
+    from cv_maker.common import Attachment
+    fake = FakeAnthropic(reply={"profile": {"name": "Ada"}, "changes": ["Imported CV"]})
+    try:
+        client = anthropic.Anthropic(api_key="sk-ant-test", base_url=fake.url, max_retries=0)
+        ai = ClaudeAI(client, model="claude-older-model")
+        result = ai.ingest(Memory(), "", [Attachment("scan.pdf", "application/pdf", b"%PDF-1.4 no text"),
+                                          Attachment("cv.pdf", "application/pdf", make_pdf("Worked at Initech"))])
+    finally:
+        fake.server.shutdown()
+    assert result.memory.profile.name == "Ada" and result.changes == ["Imported CV"]
+    content = fake.bodies[-1]["messages"][0]["content"]
+    kinds = [c["type"] for c in content]
+    assert kinds == ["text", "document", "text", "text"]
+    assert "Worked at Initech" in content[2]["text"]
