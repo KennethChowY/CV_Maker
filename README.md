@@ -55,6 +55,15 @@ It can use either:
   for every future rebuild.
 - **Gaps.** Unfilled placeholders like `[rating]` are highlighted on the CV and
   listed under *Tips*, so nothing half-finished gets sent by accident.
+- **Design.** Above the CV, pick a template (**Classic**: serif with a centred
+  header, the style most tech recruiters know; **Modern**: sans-serif with a
+  colour accent; **Minimal**: black and white), the paper size, and **Fit to one
+  page**, which shrinks text and spacing just enough to fit. Dashed lines in the
+  preview show where each new page would start.
+- **CV check.** Updates as you edit: page count, unfilled gaps, bullets with no
+  numbers, weak openings like "Responsible for…", overlong bullets, missing
+  contact details, and, if you've pasted a job ad into *Aim the CV*, which of
+  its keywords your CV is missing. Click a quoted bullet to jump to it.
 - **Aim the CV.** Paste a job ad or describe a role and the CV is tailored to it.
 - **Import.** Attach an existing CV (PDF or text) to fill the memory in one go.
 - **Preferences.** Say things like *"always use UK spelling"* or *"keep it to

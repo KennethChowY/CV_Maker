@@ -83,14 +83,34 @@
           <span id="edit-status" class="edit-status">Click anywhere on the CV to edit it.</span>
           <div class="spacer"></div>
           <button id="learn" title="Update the memory with facts and wording from your manual edits" disabled>Save edits to memory</button>
+          <button id="pdf" class="primary">Download PDF</button>
+        </div>
+
+        <div id="design-bar" class="design-bar" hidden>
+          <div class="seg" id="template-picker" role="radiogroup" aria-label="Template">
+            <button type="button" data-template="classic" title="Serif, centred header. The style most tech recruiters know.">Classic</button>
+            <button type="button" data-template="modern" title="Clean sans-serif with a colour accent.">Modern</button>
+            <button type="button" data-template="minimal" title="Black and white, lots of air.">Minimal</button>
+          </div>
+          <div class="swatches" id="accent-picker" aria-label="Accent colour"></div>
           <select id="page-size-select" title="Paper size">
             <option value="A4">A4</option>
             <option value="letter">US Letter</option>
           </select>
-          <button id="pdf" class="primary">Download PDF</button>
+          <label class="check fit"><input id="fit" type="checkbox"> Fit to one page</label>
+          <span id="page-count" class="page-count"></span>
         </div>
+
+        <details id="check-panel" class="check-panel" hidden>
+          <summary><span id="check-summary">CV check</span></summary>
+          <div id="check-list" class="check-list"></div>
+        </details>
+
         <div class="paper-wrap">
-          <article id="cv" class="cv paper" contenteditable="true" spellcheck="true"></article>
+          <div class="paper-frame">
+            <article id="cv" class="cv paper" contenteditable="true" spellcheck="true"></article>
+            <div id="page-guides" class="page-guides" aria-hidden="true"></div>
+          </div>
         </div>
         <div id="cv-empty" class="empty" hidden>
           <h3>No CV yet</h3>

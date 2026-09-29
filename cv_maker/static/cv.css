@@ -1,54 +1,95 @@
-/* Styles for the CV itself. Shared by the in-app preview, printing, and /cv.html. */
+/* Styles for the CV itself. Shared by the in-app preview, printing, and /cv.html.
+   Everything is sized in em so "fit to one page" can scale the whole CV via --cv-scale. */
 
 .cv {
-  --cv-ink: #1c1f24;
-  --cv-muted: #555c68;
+  --cv-ink: #16191d;
+  --cv-muted: #4f5561;
   --cv-accent: #1f4e79;
-  --cv-rule: #cfd5de;
-  font-family: "Helvetica Neue", "Segoe UI", Arial, sans-serif;
-  font-size: 10.5pt;
-  line-height: 1.35;
+  --cv-rule: #c9cfd8;
+  --cv-scale: 1;
+  --cv-font: "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  font-family: var(--cv-font);
+  font-size: calc(10.5pt * var(--cv-scale));
+  line-height: 1.32;
   color: var(--cv-ink);
   background: #fff;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 .cv [hidden] { display: none !important; }
 .cv h1, .cv h2, .cv p, .cv ul { margin: 0; }
+.cv a { color: inherit; text-decoration: none; }
 
-.cv-header { margin-bottom: 8pt; }
-.cv-name { font-size: 22pt; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; }
-.cv-headline { font-size: 11.5pt; color: var(--cv-accent); font-weight: 600; margin-top: 2pt; }
-.cv-contact { margin-top: 4pt; color: var(--cv-muted); font-size: 9.5pt; display: flex; flex-wrap: wrap; gap: 0 8pt; }
-.cv-contact span + span::before { content: "·"; margin-right: 8pt; color: var(--cv-rule); }
-.cv-contact a { color: inherit; text-decoration: none; }
+/* ---- header ---- */
+.cv-header { margin-bottom: 0.7em; }
+.cv-name { font-size: 2.1em; font-weight: 700; letter-spacing: -0.01em; line-height: 1.1; }
+.cv-headline { font-size: 1.08em; color: var(--cv-accent); font-weight: 600; margin-top: 0.15em; }
+.cv-contact { margin-top: 0.35em; color: var(--cv-muted); font-size: 0.92em; display: flex; flex-wrap: wrap; gap: 0 0.7em; }
+.cv-contact span + span::before { content: "·"; margin-right: 0.7em; color: var(--cv-rule); }
 
-.cv-section { margin-top: 9pt; }
+/* ---- sections ---- */
+.cv-section { margin-top: 0.85em; }
 .cv-section h2 {
-  font-size: 10pt;
+  font-size: 0.95em;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--cv-accent);
   border-bottom: 1px solid var(--cv-rule);
-  padding-bottom: 2pt;
-  margin-bottom: 5pt;
+  padding-bottom: 0.15em;
+  margin-bottom: 0.45em;
   break-after: avoid;
 }
 
-.cv-entry { margin-bottom: 6pt; break-inside: avoid; }
+/* ---- entries: line 1 = title | dates, line 2 = organisation | location ---- */
+.cv-entry { margin-bottom: 0.55em; break-inside: avoid; }
 .cv-entry:last-child { margin-bottom: 0; }
-/* Line 1: title on the left, dates on the right. Line 2: organisation and place. */
-.cv-entry-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10pt; }
+.cv-entry-head, .cv-entry-sub { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; }
 .cv-entry-title { font-weight: 700; flex: 1 1 auto; min-width: 0; }
-.cv-entry-dates { flex: 0 0 auto; white-space: nowrap; color: var(--cv-muted); font-size: 9.5pt; }
-.cv-entry-sub { color: var(--cv-muted); font-style: italic; }
-.cv-entry-sub .sep { font-style: normal; }
-.cv-entry-desc { margin-top: 1pt; color: var(--cv-muted); }
+.cv-entry-dates { flex: 0 0 auto; white-space: nowrap; color: var(--cv-muted); font-size: 0.93em; }
+.cv-entry-sub { color: var(--cv-muted); }
+.cv-entry-sub { flex-wrap: wrap; row-gap: 0; }
+.cv-entry-org { font-style: italic; flex: 0 1 auto; min-width: 0; }
+/* Stays on the right; drops below (still right-aligned) if the organisation name is long. */
+.cv-entry-loc { margin-left: auto; font-style: italic; font-size: 0.93em; text-align: right; }
+.cv-entry-desc { margin-top: 0.1em; color: var(--cv-muted); }
 
-.cv ul { padding-left: 13pt; margin-top: 2pt; }
-.cv li { margin-bottom: 1.5pt; }
-.cv ul.cv-items { padding-left: 0; list-style: none; }
-.cv ul.cv-items li { margin-bottom: 2pt; }
+.cv ul { padding-left: 1.25em; margin-top: 0.2em; }
+.cv li { margin-bottom: 0.12em; }
+.cv li::marker { color: var(--cv-muted); }
+.cv ul.cv-items { padding-left: 0; list-style: none; margin-top: 0; }
+.cv ul.cv-items li { margin-bottom: 0.18em; }
 
+/* ---- template: Classic (serif, centred header; the style most tech recruiters know) ---- */
+.cv.t-classic {
+  --cv-font: "Charter", "Bitstream Charter", "Georgia", "Times New Roman", serif;
+  --cv-accent: var(--cv-ink);
+  --cv-rule: #1b1b1b;
+  line-height: 1.28;
+}
+.cv.t-classic .cv-header { text-align: center; }
+.cv.t-classic .cv-name { font-size: 2.3em; font-weight: 700; letter-spacing: 0.01em; }
+.cv.t-classic .cv-headline { color: var(--cv-muted); font-weight: 400; font-style: italic; }
+.cv.t-classic .cv-contact { justify-content: center; color: var(--cv-ink); }
+.cv.t-classic .cv-contact span + span::before { content: "|"; color: var(--cv-muted); }
+.cv.t-classic .cv-contact a { text-decoration: underline; text-underline-offset: 0.15em; }
+.cv.t-classic .cv-section h2 { font-variant: small-caps; text-transform: none; font-size: 1.12em; letter-spacing: 0.04em; font-weight: 600; }
+.cv.t-classic .cv-entry-dates, .cv.t-classic .cv-entry-sub { color: var(--cv-ink); }
+.cv.t-classic .cv-entry-org { font-style: italic; }
+
+/* ---- template: Minimal (clean sans, black and white) ---- */
+.cv.t-minimal {
+  --cv-font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --cv-accent: var(--cv-ink);
+  --cv-rule: #e1e4e8;
+}
+.cv.t-minimal .cv-name { font-weight: 600; letter-spacing: -0.02em; }
+.cv.t-minimal .cv-headline { color: var(--cv-muted); font-weight: 500; }
+.cv.t-minimal .cv-section h2 { font-size: 0.82em; letter-spacing: 0.14em; color: var(--cv-muted); font-weight: 600; }
+.cv.t-minimal .cv-entry-org, .cv.t-minimal .cv-entry-loc { font-style: normal; }
+
+/* ---- standalone page (/cv.html) ---- */
 body.standalone { margin: 0; background: #fff; }
 body.standalone .cv { max-width: 182mm; margin: 12mm auto; }
 @media print {

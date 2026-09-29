@@ -222,3 +222,13 @@ def test_memory_tab_edits_do_not_trigger_a_rebuild(client, ai):
     body = client.put("/api/memory?rebuild=0", json={"profile": {"name": "Grace"}}).get_json()
     assert ai.targets == [] and "Rebuild CV" in body["notice"]
     assert body["memory"]["profile"]["name"] == "Grace"
+
+
+def test_design_settings_are_validated_and_used_on_the_standalone_page(client):
+    assert client.post("/api/settings", json={"template": "fancy"}).status_code == 400
+    assert client.post("/api/settings", json={"accent": "red; background: url(x)"}).status_code == 400
+    body = client.post("/api/settings", json={"template": "modern", "accent": "#0f6e6e", "fit_one_page": 1}).get_json()
+    assert body["settings"]["template"] == "modern" and body["settings"]["fit_one_page"] is True
+    client.post("/api/ingest", data={"text": "Engineer"})
+    page = client.get("/cv.html").get_data(as_text=True)
+    assert "class='cv t-modern'" in page and "--cv-accent: #0f6e6e" in page

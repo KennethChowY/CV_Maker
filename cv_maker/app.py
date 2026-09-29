@@ -18,6 +18,7 @@ from .store import Store
 
 STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+TEMPLATES = ("classic", "modern", "minimal")
 EDIT_CONFLICT = (
     "Your CV has manual edits, so it wasn't rebuilt automatically. Use "
     "'Save edits to memory' to keep them, or 'Rebuild CV' to replace them."
@@ -229,7 +230,14 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     def settings():
         body = request.get_json(silent=True) or {}
         # The model is changed through /api/models/choose, which checks it first.
-        store.save_settings({k: v for k, v in body.items() if k not in ("ai_backend", "ai_model")})
+        body = {k: v for k, v in body.items() if k not in ("ai_backend", "ai_model")}
+        if "template" in body and body["template"] not in TEMPLATES:
+            return error("Unknown template.")
+        if "accent" in body and not re.fullmatch(r"#[0-9a-fA-F]{6}", str(body["accent"])):
+            return error("Accent must be a colour like #1f4e79.")
+        if "fit_one_page" in body:
+            body["fit_one_page"] = bool(body["fit_one_page"])
+        store.save_settings(body)
         return state()
 
     @app.get("/cv.html")
@@ -237,11 +245,14 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         cv = store.load_cv()
         name = escape(cv.name if cv else "My")
         css = (STATIC / "cv.css").read_text(encoding="utf-8")
-        size = store.load_settings()["page_size"]
+        settings = store.load_settings()
+        template = settings["template"] if settings["template"] in TEMPLATES else "classic"
+        accent = settings["accent"] if re.fullmatch(r"#[0-9a-fA-F]{6}", settings["accent"]) else "#1f4e79"
         html = (
             f"<!doctype html><html><head><meta charset='utf-8'><title>{name} – CV</title>"
-            f"<style>{css}\n@page {{ size: {size}; }}</style></head>"
-            f"<body class='standalone'><article class='cv'>{store.cv_html()}</article></body></html>"
+            f"<style>{css}\n@page {{ size: {settings['page_size']}; }}</style></head>"
+            f"<body class='standalone'><article class='cv t-{template}' style='--cv-accent: {accent}'>"
+            f"{store.cv_html()}</article></body></html>"
         )
         return Response(html, mimetype="text/html")
 

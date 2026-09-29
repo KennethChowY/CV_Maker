@@ -105,7 +105,8 @@ class Store:
 
     def load_settings(self) -> dict:
         defaults = {"auto_rebuild": True, "target": "", "page_size": "A4", "ai_backend": "", "ai_model": "",
-                    "section_order": [], "hidden_sections": []}
+                    "section_order": [], "hidden_sections": [],
+                    "template": "classic", "accent": "#1f4e79", "fit_one_page": False}
         if self.settings_path.exists():
             defaults.update(json.loads(self.settings_path.read_text(encoding="utf-8")))
         return defaults

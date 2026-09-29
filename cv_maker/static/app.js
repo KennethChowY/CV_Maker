@@ -68,6 +68,9 @@ function render(next) {
   renderList($("advice"), state.advice);
   $("advice-card").hidden = !state.advice.length;
 
+  applyDesign();
+  layoutPages();
+  runChecks();
   renderSections();
   renderMemory();
   renderHistory();
@@ -531,6 +534,236 @@ function switchTab(name) {
   ["cv", "memory", "history"].forEach((t) => { $(`tab-${t}`).hidden = t !== name; });
 }
 
+// ---------- Design, page fitting and CV check ----------
+
+const ACCENTS = ["#1f4e79", "#0f6e6e", "#2f6b3a", "#8a1c2b", "#4b3b8f", "#333a44"];
+const PAGE_MM = { A4: 297, letter: 279.4 };
+const PAD_MM = 13;          // top/bottom padding of each printed page
+const MIN_SCALE = 0.82;     // smallest "fit to one page" will go (about 8.6pt text)
+const FIT_SLACK_MM = 8;     // printing lays text out slightly differently from the screen; leave room
+let pxPerMm = 0;
+let layoutTimer = null;
+let lastPages = 1;
+let fitFailed = false;
+
+function mm(n) {
+  if (!pxPerMm) {
+    const probe = el("div");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:100mm";
+    document.body.append(probe);
+    pxPerMm = probe.getBoundingClientRect().width / 100;
+    probe.remove();
+  }
+  return n * pxPerMm;
+}
+
+function applyDesign() {
+  const { template, accent } = state.settings;
+  const cv = $("cv");
+  cv.classList.remove("t-classic", "t-modern", "t-minimal");
+  cv.classList.add(`t-${template}`);
+  if (template === "modern") cv.style.setProperty("--cv-accent", accent);
+  else cv.style.removeProperty("--cv-accent");
+  $("design-bar").hidden = !state.cv_html;
+  document.querySelectorAll("#template-picker button").forEach((b) => b.classList.toggle("active", b.dataset.template === template));
+  $("accent-picker").hidden = template !== "modern";
+  if (!$("accent-picker").children.length) {
+    for (const color of ACCENTS) {
+      const b = button("", "", () => saveSettings({ accent: color }), "Accent colour");
+      b.style.background = color;
+      b.dataset.color = color;
+      $("accent-picker").append(b);
+    }
+  }
+  [...$("accent-picker").children].forEach((b) => b.classList.toggle("active", b.dataset.color === accent));
+  $("fit").checked = !!state.settings.fit_one_page;
+}
+
+function contentHeight(cv) {
+  const top = cv.getBoundingClientRect().top + parseFloat(getComputedStyle(cv).paddingTop);
+  let bottom = top;
+  for (const child of cv.children) {
+    if (child.hidden) continue;
+    bottom = Math.max(bottom, child.getBoundingClientRect().bottom + parseFloat(getComputedStyle(child).marginBottom || 0));
+  }
+  return bottom - top;
+}
+
+function layoutPages() {
+  const cv = $("cv");
+  const guides = $("page-guides");
+  if (cv.hidden || !state?.cv_html) { guides.replaceChildren(); return; }
+  const usable = mm(PAGE_MM[state.settings.page_size === "letter" ? "letter" : "A4"] - 2 * PAD_MM);
+
+  let scale = 1;
+  cv.style.setProperty("--cv-scale", "1");
+  fitFailed = false;
+  const target = usable - mm(FIT_SLACK_MM);
+  if (state.settings.fit_one_page && contentHeight(cv) > target) {
+    let lo = MIN_SCALE, hi = 1;
+    cv.style.setProperty("--cv-scale", String(lo));
+    if (contentHeight(cv) > target) {
+      scale = lo;
+      fitFailed = true;
+    } else {
+      for (let i = 0; i < 7; i++) {
+        const mid = (lo + hi) / 2;
+        cv.style.setProperty("--cv-scale", String(mid));
+        if (contentHeight(cv) <= target) lo = mid; else hi = mid;
+      }
+      scale = lo;
+    }
+    cv.style.setProperty("--cv-scale", scale.toFixed(3));
+  }
+
+  const height = contentHeight(cv);
+  lastPages = Math.max(1, Math.ceil((height - 1) / usable));
+  const top = parseFloat(getComputedStyle(cv).paddingTop);
+  guides.replaceChildren(...Array.from({ length: lastPages - 1 }, (_, i) => {
+    const g = el("div", "page-guide");
+    g.style.top = `${top + usable * (i + 1)}px`;
+    g.append(el("span", "", `Page ${i + 2} starts about here`));
+    return g;
+  }));
+
+  const count = $("page-count");
+  const size = scale < 1 ? ` · text at ${Math.round(scale * 100)}%` : "";
+  count.textContent = fitFailed
+    ? "Still over one page at the smallest size. Hide a section or shorten some bullets."
+    : `${lastPages} page${lastPages > 1 ? "s" : ""}${size}`;
+  count.classList.toggle("warn", fitFailed || lastPages > 2);
+}
+
+function scheduleLayout() {
+  clearTimeout(layoutTimer);
+  layoutTimer = setTimeout(() => { layoutPages(); runChecks(); }, 300);
+}
+
+// ---- CV check ----
+
+const WEAK_START = /^(responsible for|helped|assisted|worked on|involved in|participated in|duties included|tasked with|in charge of|handled)\b/i;
+const STOP = new Set(`a an the and or but if of to in on for with at by from as is are was were be been being this that these
+those it its you your we our they their he she his her will would can could should may might must not no yes all any some such
+than then there here who whom which what when where why how also etc per via into onto over under within without about across
+after before during include includes including required requirements require requires preferred qualifications qualification
+responsibilities responsibility role roles position job jobs candidate candidates team teams work working works experience
+experienced years year ability able strong excellent good great skills skill knowledge understanding opportunity opportunities
+company business environment plus using use used new well related relevant least minimum degree bachelor bachelors master
+masters phd field equivalent join looking seeking help make based highly other others more most one two three four five
+we're you'll you're it's our us across both each every just like need needs needed want wants within day days time full part
+apply application applications salary benefits location remote hybrid office offer offers provide provides support ensure
+across key new develop development developing build building create creating manage managing lead leading drive driving
+deliver delivering deliverables stakeholders proven track record demonstrated excellent communication communicate
+written verbal detail oriented self motivated fast paced dynamic passionate problem solving solve solving
+results communicating collaborate collaborating collaboration looking ideal ideally familiarity familiar exposure`.split(/\s+/));
+
+function jobKeywords(text) {
+  const scores = new Map();
+  const display = new Map();
+  for (const raw of text.match(/[A-Za-z][A-Za-z0-9+#.\-]*[A-Za-z0-9+#]|[A-Za-z]/g) || []) {
+    const word = raw.replace(/\.$/, "");
+    const key = word.toLowerCase();
+    const acronym = word === word.toUpperCase() && /[A-Z]/.test(word);
+    if (STOP.has(key) || (key.length < 3 && !acronym)) continue;
+    const bonus = /[A-Z+#]/.test(word.slice(1)) || acronym || /^[A-Z]/.test(word) ? 1 : 0;
+    scores.set(key, (scores.get(key) || 0) + 1 + bonus);
+    if (!display.has(key) || acronym) display.set(key, word);
+  }
+  return [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([key]) => ({ key, label: display.get(key) }));
+}
+
+function hasWord(haystack, key) {
+  if (/[^a-z0-9]/.test(key)) return haystack.includes(key);
+  return new RegExp(`(^|[^a-z0-9])${key}([^a-z0-9]|$)`).test(haystack);
+}
+
+function snippetButton(li) {
+  const text = li.textContent.trim();
+  return button(`“${text.length > 70 ? `${text.slice(0, 70)}…` : text}”`, "snip", () => {
+    li.scrollIntoView({ block: "center", behavior: "smooth" });
+    li.classList.add("flash");
+    setTimeout(() => li.classList.remove("flash"), 1600);
+  });
+}
+
+function runChecks() {
+  const panel = $("check-panel");
+  if (!state?.cv_html) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const cv = $("cv");
+  const visible = [...cv.querySelectorAll("section.cv-section")].filter((s) => !s.hidden);
+  // Achievement bullets (jobs, projects); education details like coursework don't need numbers.
+  const bullets = visible.filter((s) => !/education/.test(s.dataset.section || ""))
+    .flatMap((s) => [...s.querySelectorAll(".cv-entry li")]);
+  const checks = [];
+  const add = (level, text, detail = "", extra = null) => checks.push({ level, text, detail, extra });
+
+  if (fitFailed) add("warn", "Doesn't fit on one page", "Hide a section in the Sections box or shorten some bullets.");
+  else if (lastPages > 2) add("warn", `${lastPages} pages is long`, "Recruiters skim. Aim for one page as a student or graduate, two at most.");
+  else if (lastPages === 2) add("info", "Two pages", "Fine with several years of experience. As a student or graduate, try 'Fit to one page'.");
+  else add("ok", "Fits on one page");
+
+  const gaps = cv.querySelectorAll("mark.placeholder");
+  if (gaps.length) add("warn", `${gaps.length} unfilled gap${gaps.length > 1 ? "s" : ""} like ${gaps[0].textContent}`,
+                       "Replace them with real details before sending.",
+                       [...new Set([...gaps].map((g) => g.closest("li") || g.parentElement))].slice(0, 5));
+
+  const noNumbers = bullets.filter((li) => !/\d/.test(li.textContent));
+  if (bullets.length && noNumbers.length / bullets.length > 0.5) {
+    add("warn", `${noNumbers.length} of ${bullets.length} bullets have no numbers`,
+        "Numbers make impact concrete: how many, how much, how fast, what percentage.", noNumbers.slice(0, 5));
+  } else if (bullets.length) add("ok", "Most bullets include numbers");
+
+  const weak = bullets.filter((li) => WEAK_START.test(li.textContent.trim()));
+  if (weak.length) add("warn", `${weak.length} bullet${weak.length > 1 ? "s" : ""} start weakly`,
+                       "Start with what you did: Built, Led, Designed, Automated, Analysed…", weak.slice(0, 5));
+
+  const long = bullets.filter((li) => li.textContent.trim().length > 220);
+  if (long.length) add("info", `${long.length} bullet${long.length > 1 ? "s are" : " is"} very long`,
+                       "Keep bullets to one or two lines so they're easy to skim.", long.slice(0, 5));
+
+  const p = state.memory.profile;
+  const missing = [!p.email && "email", !p.phone && "phone", !p.links.length && "a LinkedIn or GitHub link"].filter(Boolean);
+  if (missing.length) add("info", `Contact details missing: ${missing.join(", ")}`, "Add them with Edit on Profile in the Memory tab.");
+  else add("ok", "Contact details complete");
+
+  const target = (state.settings.target || "").trim();
+  if (target.split(/\s+/).length >= 15) {
+    const words = jobKeywords(target);
+    const text = cv.innerText.toLowerCase();
+    const have = words.filter((w) => hasWord(text, w.key));
+    const lacking = words.filter((w) => !hasWord(text, w.key));
+    add(lacking.length > words.length / 2 ? "warn" : "info",
+        `Job ad keywords on your CV: ${have.length} of ${words.length}`,
+        "Automatic screening looks for these words. Add missing ones only where they're true for you.",
+        { have, lacking });
+  } else {
+    add("info", "Paste a job ad into 'Aim the CV' to see which of its keywords your CV is missing");
+  }
+
+  const issues = checks.filter((c) => c.level === "warn").length;
+  $("check-summary").innerHTML = "";
+  $("check-summary").append("CV check ", el("span", "count", issues ? `· ${issues} thing${issues > 1 ? "s" : ""} to fix` : "· looking good"));
+  $("check-list").replaceChildren(...checks.map((c) => {
+    const row = el("div", `check-item ${c.level}`);
+    const body = el("div");
+    body.append(el("div", "", c.text));
+    if (c.detail) body.append(el("div", "detail", c.detail));
+    if (Array.isArray(c.extra) && c.extra.length) {
+      const snips = el("div", "snips");
+      c.extra.forEach((li) => snips.append(snippetButton(li)));
+      body.append(snips);
+    } else if (c.extra?.lacking) {
+      const chips = el("div", "chips");
+      c.extra.lacking.forEach((w) => chips.append(el("span", "chip", w.label)));
+      c.extra.have.forEach((w) => chips.append(el("span", "chip have", `✓ ${w.label}`)));
+      body.append(chips);
+    }
+    row.append(el("span", "icon", { ok: "✓", warn: "!", info: "i" }[c.level]), body);
+    return row;
+  }));
+}
+
 // ---------- Section arranger ----------
 
 let dragKey = null;
@@ -769,7 +1002,12 @@ $("rebuild").addEventListener("click", rebuild);
 $("auto").addEventListener("change", (e) => saveSettings({ auto_rebuild: e.target.checked }));
 $("target").addEventListener("change", (e) => saveSettings({ target: e.target.value }));
 $("page-size-select").addEventListener("change", (e) => saveSettings({ page_size: e.target.value }));
-$("cv").addEventListener("input", scheduleEditSave);
+$("fit").addEventListener("change", (e) => saveSettings({ fit_one_page: e.target.checked }));
+document.querySelectorAll("#template-picker button").forEach((b) =>
+  b.addEventListener("click", () => saveSettings({ template: b.dataset.template })));
+$("target").addEventListener("input", () => { state.settings.target = $("target").value; scheduleLayout(); });
+document.fonts?.ready.then(() => state && (layoutPages(), runChecks()));
+$("cv").addEventListener("input", () => { scheduleEditSave(); scheduleLayout(); });
 $("cv").addEventListener("paste", (e) => {
   // Paste as plain text so formatting from other apps doesn't leak into the CV.
   e.preventDefault();
