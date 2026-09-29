@@ -14,7 +14,7 @@ from .ai import AIError, Attachment
 from .models import NO_AI_MESSAGE, ModelManager, build_ai, check_api_key, credentials_configured, default_choice
 from .render import basic_cv, render_cv, section_list, tidy_cv
 from .schema import Memory
-from .store import Store
+from .store import GENERAL, STATUSES, Store
 
 STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -64,25 +64,35 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         settings = store.load_settings()
         return settings["section_order"], settings["hidden_sections"]
 
-    def build(target: str) -> list[str]:
+    def build(vid: str | None = None) -> list[str]:
+        """Rebuild a version's CV (the one open on the page by default) for its job ad."""
+        vid = vid or store.active_version()
+        target = store.version_info(vid)["target"]
         memory = store.load_memory()
         ai = models.current()
         cv = tidy_cv(ai.build_cv(memory, target) if ai else basic_cv(memory))
-        store.save_cv(cv, render_cv(cv, *layout()), target)
+        store.save_cv(cv, render_cv(cv, *layout()), target, vid)
         return cv.advice
 
     def state(**extra) -> Response:
-        cv = store.load_cv()
+        vid = store.active_version()
+        cv = store.load_cv(vid)
         ai = models.current()
+        info = store.version_info(vid)
         payload = {
             "memory": store.load_memory().model_dump(),
             "history": store.history(),
             "can_undo": store.can_undo(),
             "settings": store.load_settings(),
-            "cv_html": store.cv_html(),
-            "cv_meta": store.cv_meta(),
+            "active": info,
+            "target": info["target"],
+            "versions": store.list_versions(),
+            "statuses": STATUSES,
+            "cv_html": store.cv_html(vid),
+            "cv_meta": store.cv_meta(vid),
             "advice": cv.advice if cv else [],
             "sections": section_list(cv, *layout()) if cv else [],
+            "letter": store.load_letter(vid),
             "ai_enabled": ai is not None,
             "ai_status": ai_status(ai),
         }
@@ -96,10 +106,14 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         settings = store.load_settings()
         if not settings["auto_rebuild"]:
             return {}
-        if store.cv_meta().get("edited"):
+        vid = store.active_version()
+        if vid != GENERAL and store.version_info(vid)["status"] != "Draft":
+            return {"notice": "This application's CV is kept as it was sent. "
+                              "Click 'Rebuild CV' if you want it to include the new information."}
+        if store.cv_meta(vid).get("edited"):
             return {"notice": EDIT_CONFLICT}
         try:
-            build(settings["target"])
+            build(vid)
         except AIError as e:
             return {"notice": f"Memory saved, but the CV couldn't be rebuilt: {e}"}
         return {}
@@ -172,10 +186,9 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     @app.post("/api/build")
     def rebuild():
         body = request.get_json(silent=True) or {}
-        target = body.get("target")
-        if target is not None:
-            store.save_settings({"target": target})
-        build(store.load_settings()["target"])
+        if isinstance(body.get("target"), str):
+            store.update_version(store.active_version(), {"target": body["target"]})
+        build()
         return state()
 
     @app.post("/api/cv")
@@ -183,7 +196,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         html = (request.get_json(silent=True) or {}).get("html")
         if not isinstance(html, str):
             return error("Missing CV HTML.")
-        store.save_cv_edits(clean_html(html))
+        store.save_cv_edits(clean_html(html), store.active_version())
         return state()
 
     @app.post("/api/cv/layout")
@@ -193,11 +206,12 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         if not (isinstance(order, list) and isinstance(hidden, list)):
             return error("Missing section order.")
         store.save_settings({"section_order": [str(x) for x in order], "hidden_sections": [str(x) for x in hidden]})
-        cv = store.load_cv()
-        if cv and store.cv_meta().get("edited") and isinstance(body.get("html"), str):
-            store.save_cv_edits(clean_html(body["html"]))  # keep hand edits; the page already moved the sections
+        vid = store.active_version()
+        cv = store.load_cv(vid)
+        if cv and store.cv_meta(vid).get("edited") and isinstance(body.get("html"), str):
+            store.save_cv_edits(clean_html(body["html"]), vid)  # keep hand edits; the page already moved the sections
         elif cv:
-            store.save_cv_html(render_cv(cv, *layout()))
+            store.save_cv_html(render_cv(cv, *layout()), vid)
         return state()
 
     @app.post("/api/cv/learn")
@@ -216,7 +230,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         )
         result = ai.ingest(store.load_memory(), note)
         store.save_memory(result.memory, source="cv-edits", input_text="Learned from manual CV edits", changes=result.changes)
-        store.mark_cv_edits_learned()
+        store.mark_cv_edits_learned(store.active_version())
         return state(changes=result.changes, questions=result.questions)
 
     @app.post("/api/undo")
@@ -241,7 +255,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     def settings():
         body = request.get_json(silent=True) or {}
         # The model is changed through /api/models/choose, which checks it first.
-        body = {k: v for k, v in body.items() if k not in ("ai_backend", "ai_model")}
+        body = {k: v for k, v in body.items() if k not in ("ai_backend", "ai_model", "active_version")}
         if "template" in body and body["template"] not in TEMPLATES:
             return error("Unknown template.")
         if "accent" in body and not re.fullmatch(r"#[0-9a-fA-F]{6}", str(body["accent"])):
@@ -251,9 +265,51 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         store.save_settings(body)
         return state()
 
+    # ---- job applications (each has its own tailored CV) -------------
+
+    @app.post("/api/versions")
+    def create_version():
+        body = request.get_json(silent=True) or {}
+        company, role = str(body.get("company", "")).strip(), str(body.get("role", "")).strip()
+        if not company and not role:
+            return error("Add the company or the role.")
+        info = store.create_version(company=company, role=role, target=str(body.get("target", "")),
+                                    link=str(body.get("link", "")))
+        store.save_settings({"active_version": info["id"]})
+        try:
+            build(info["id"])
+        except AIError as e:
+            return state(notice=f"Saved the application, but its CV couldn't be tailored yet: {e}")
+        return state()
+
+    @app.patch("/api/versions/<vid>")
+    def update_version(vid: str):
+        if not store.has_version(vid):
+            return error("That application no longer exists.", 404)
+        body = request.get_json(silent=True) or {}
+        if "status" in body and body["status"] not in STATUSES:
+            return error("Unknown status.")
+        store.update_version(vid, body)
+        return state()
+
+    @app.delete("/api/versions/<vid>")
+    def delete_version(vid: str):
+        if vid == GENERAL or not store.has_version(vid):
+            return error("That application no longer exists.", 404)
+        store.delete_version(vid)
+        return state()
+
+    @app.post("/api/versions/active")
+    def open_version():
+        vid = str((request.get_json(silent=True) or {}).get("id", GENERAL))
+        if not store.has_version(vid):
+            return error("That application no longer exists.", 404)
+        store.save_settings({"active_version": vid})
+        return state()
+
     @app.get("/cv.html")
     def standalone_cv():
-        cv = store.load_cv()
+        cv = store.load_cv(store.active_version())
         name = escape(cv.name if cv else "My")
         css = (STATIC / "cv.css").read_text(encoding="utf-8")
         settings = store.load_settings()
@@ -263,7 +319,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
             f"<!doctype html><html><head><meta charset='utf-8'><title>{name} – CV</title>"
             f"<style>{css}\n@page {{ size: {settings['page_size']}; }}</style></head>"
             f"<body class='standalone'><article class='cv t-{template}' style='--cv-accent: {accent}'>"
-            f"{store.cv_html()}</article></body></html>"
+            f"{store.cv_html(store.active_version())}</article></body></html>"
         )
         return Response(html, mimetype="text/html")
 

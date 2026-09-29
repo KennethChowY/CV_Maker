@@ -13,6 +13,7 @@
     <div class="brand">CV Maker</div>
     <nav class="tabs" role="tablist">
       <button class="tab active" data-tab="cv" role="tab">CV</button>
+      <button class="tab" data-tab="applications" role="tab">Applications</button>
       <button class="tab" data-tab="memory" role="tab">Memory</button>
       <button class="tab" data-tab="history" role="tab">History</button>
     </nav>
@@ -68,7 +69,7 @@
       </section>
 
       <section class="card">
-        <h2>Aim the CV</h2>
+        <h2 id="aim-title">Aim the CV</h2>
         <p class="hint">Optional. Paste a job ad or describe the role you're after, and the CV is tailored to it.</p>
         <textarea id="target" rows="4" placeholder="e.g. Senior backend role at a fintech, or paste a job description"></textarea>
         <label class="check"><input id="auto" type="checkbox"> Rebuild CV automatically after each update</label>
@@ -92,6 +93,7 @@
 
       <section id="tab-cv" class="panel">
         <div class="toolbar">
+          <select id="version-select" class="version-select" aria-label="Which CV"></select>
           <span id="edit-status" class="edit-status">Click anywhere on the CV to edit it.</span>
           <div class="spacer"></div>
           <button id="learn" title="Update the memory with facts and wording from your manual edits" disabled>Save edits to memory</button>
@@ -128,6 +130,28 @@
           <h3>No CV yet</h3>
           <p>Start by telling me about yourself on the left, or attach your current CV. Your memory builds up over time and the CV is rewritten from it.</p>
         </div>
+      </section>
+
+      <section id="tab-applications" class="panel" hidden>
+        <div class="toolbar">
+          <span id="app-summary" class="hint">Each application gets its own CV, tailored to the job ad, so your general CV stays as it is.</span>
+          <div class="spacer"></div>
+          <button id="new-app" class="primary">New application</button>
+        </div>
+        <form id="app-form" class="card app-form" hidden>
+          <h2>New application</h2>
+          <div class="app-grid">
+            <label class="field"><span class="field-label">Company</span><input name="company" autocomplete="off"></label>
+            <label class="field"><span class="field-label">Role</span><input name="role" autocomplete="off"></label>
+            <label class="field wide"><span class="field-label">Link to the job ad (optional)</span><input name="link" autocomplete="off"></label>
+            <label class="field wide"><span class="field-label">Job description: paste the full ad so the CV can be tailored to it</span><textarea name="target" rows="7"></textarea></label>
+          </div>
+          <div class="row end">
+            <button type="button" id="app-cancel">Cancel</button>
+            <button type="submit" class="primary">Create tailored CV</button>
+          </div>
+        </form>
+        <div id="app-list" class="app-list"></div>
       </section>
 
       <section id="tab-memory" class="panel" hidden>

@@ -5,9 +5,13 @@ Layout of the data directory:
     memory.json          current memory (source of truth)
     history.jsonl        one line per change: what you typed and what changed
     snapshots/*.json     memory as it was before each change (used for undo)
-    cv.json              last generated CV (structured)
-    cv.html              current CV body, including any manual edits
-    cv_meta.json         when/for what the CV was generated, whether it was hand-edited
+    cv.json              the general CV (structured), as last generated
+    cv.html              the general CV page, including any manual edits
+    cv_meta.json         when/for what it was generated, whether it was hand-edited
+    letter.json          the general cover letter
+    versions/<id>/       one folder per job application: info.json (company, role,
+                         job ad, status…) plus its own cv.json, cv.html, cv_meta.json
+                         and letter.json
     secrets.json         optional Claude API key, readable only by you
 """
 
@@ -16,12 +20,17 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .schema import CVDocument, Memory
 
 _SECTIONS_WITH_IDS = ("experience", "education", "projects", "achievements")
+GENERAL = "general"
+STATUSES = ("Draft", "Applied", "Interview", "Offer", "Rejected", "Withdrawn")
+_VERSION_FIELDS = ("company", "role", "name", "target", "link", "status", "applied", "notes")
 
 
 def _now() -> str:
@@ -55,11 +64,9 @@ class Store:
         self.snapshots.mkdir(parents=True, exist_ok=True)
         self.memory_path = self.dir / "memory.json"
         self.history_path = self.dir / "history.jsonl"
-        self.cv_json_path = self.dir / "cv.json"
-        self.cv_html_path = self.dir / "cv.html"
-        self.cv_meta_path = self.dir / "cv_meta.json"
         self.settings_path = self.dir / "settings.json"
         self.secrets_path = self.dir / "secrets.json"
+        self.versions_dir = self.dir / "versions"
 
     # ---- memory -------------------------------------------------------
 
@@ -108,6 +115,7 @@ class Store:
 
     def load_settings(self) -> dict:
         defaults = {"auto_rebuild": True, "target": "", "page_size": "A4", "ai_backend": "", "ai_model": "",
+                    "active_version": GENERAL,
                     "section_order": [], "hidden_sections": [],
                     "template": "classic", "accent": "#1f4e79", "fit_one_page": False}
         if self.settings_path.exists():
@@ -138,38 +146,120 @@ class Store:
             json.dump({"anthropic_api_key": key}, f)
         tmp.replace(self.secrets_path)
 
-    # ---- CV -----------------------------------------------------------
+    # ---- versions (one per job application) ---------------------------
 
-    def save_cv(self, cv: CVDocument, html: str, target: str) -> None:
-        _write_atomic(self.cv_json_path, cv.model_dump_json(indent=2))
-        _write_atomic(self.cv_html_path, html)
+    def _slot(self, vid: str = GENERAL) -> Path:
+        if vid == GENERAL:
+            return self.dir
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,80}", vid or "") or not (self.versions_dir / vid).is_dir():
+            raise KeyError(vid)
+        return self.versions_dir / vid
+
+    def has_version(self, vid: str) -> bool:
+        try:
+            self._slot(vid)
+            return True
+        except KeyError:
+            return False
+
+    def active_version(self) -> str:
+        vid = self.load_settings()["active_version"]
+        return vid if self.has_version(vid) else GENERAL
+
+    def version_info(self, vid: str = GENERAL) -> dict:
+        if vid == GENERAL:
+            return {"id": GENERAL, "name": "General CV", "target": self.load_settings()["target"],
+                    "company": "", "role": "", "status": "", "applied": "", "link": "", "notes": ""}
+        return json.loads((self._slot(vid) / "info.json").read_text(encoding="utf-8"))
+
+    def list_versions(self) -> list[dict]:
+        if not self.versions_dir.exists():
+            return []
+        infos = [json.loads(p.read_text(encoding="utf-8")) for p in self.versions_dir.glob("*/info.json")]
+        return sorted(infos, key=lambda i: i.get("created", ""), reverse=True)
+
+    def create_version(self, *, company: str = "", role: str = "", target: str = "", link: str = "",
+                       copy_from: str = GENERAL) -> dict:
+        slug = re.sub(r"[^a-z0-9]+", "-", f"{company} {role}".lower()).strip("-")[:40] or "application"
+        vid = f"{slug}-{secrets.token_hex(3)}"
+        slot = self.versions_dir / vid
+        slot.mkdir(parents=True)
+        source = self._slot(copy_from)
+        for name in ("cv.json", "cv.html", "cv_meta.json"):  # start from the current CV until rebuilt
+            if (source / name).exists():
+                shutil.copy(source / name, slot / name)
+        info = {
+            "id": vid, "company": company.strip(), "role": role.strip(),
+            "name": " – ".join(x for x in (role.strip(), company.strip()) if x) or "Application",
+            "target": target.strip(), "link": link.strip(), "status": "Draft", "applied": "", "notes": "",
+            "created": _now(), "updated": _now(),
+        }
+        _write_atomic(slot / "info.json", json.dumps(info, indent=2))
+        return info
+
+    def update_version(self, vid: str, fields: dict) -> dict:
+        if vid == GENERAL:
+            if "target" in fields:
+                self.save_settings({"target": str(fields["target"])})
+            return self.version_info(GENERAL)
+        info = self.version_info(vid)
+        for key in _VERSION_FIELDS:
+            if key in fields:
+                info[key] = str(fields[key]).strip() if key != "target" else str(fields[key])
+        if info["status"] not in STATUSES:
+            info["status"] = "Draft"
+        info["updated"] = _now()
+        _write_atomic(self._slot(vid) / "info.json", json.dumps(info, indent=2))
+        return info
+
+    def delete_version(self, vid: str) -> None:
+        if vid == GENERAL:
+            raise KeyError(vid)
+        shutil.rmtree(self._slot(vid))
+        if self.load_settings()["active_version"] == vid:
+            self.save_settings({"active_version": GENERAL})
+
+    # ---- CV (of a version; the general CV by default) ---------------------
+
+    def save_cv(self, cv: CVDocument, html: str, target: str, vid: str = GENERAL) -> None:
+        slot = self._slot(vid)
+        _write_atomic(slot / "cv.json", cv.model_dump_json(indent=2))
+        _write_atomic(slot / "cv.html", html)
         meta = {"generated_at": _now(), "target": target, "edited": False}
-        _write_atomic(self.cv_meta_path, json.dumps(meta, indent=2))
+        _write_atomic(slot / "cv_meta.json", json.dumps(meta, indent=2))
 
-    def save_cv_html(self, html: str) -> None:
+    def save_cv_html(self, html: str, vid: str = GENERAL) -> None:
         """Replace the CV page (e.g. after re-arranging sections) without marking it as hand-edited."""
-        _write_atomic(self.cv_html_path, html)
+        _write_atomic(self._slot(vid) / "cv.html", html)
 
-    def save_cv_edits(self, html: str) -> None:
-        _write_atomic(self.cv_html_path, html)
-        meta = self.cv_meta()
+    def save_cv_edits(self, html: str, vid: str = GENERAL) -> None:
+        _write_atomic(self._slot(vid) / "cv.html", html)
+        meta = self.cv_meta(vid)
         meta.update({"edited": True, "edited_at": _now()})
-        _write_atomic(self.cv_meta_path, json.dumps(meta, indent=2))
+        _write_atomic(self._slot(vid) / "cv_meta.json", json.dumps(meta, indent=2))
 
-    def mark_cv_edits_learned(self) -> None:
-        meta = self.cv_meta()
+    def mark_cv_edits_learned(self, vid: str = GENERAL) -> None:
+        meta = self.cv_meta(vid)
         meta["edited"] = False
-        _write_atomic(self.cv_meta_path, json.dumps(meta, indent=2))
+        _write_atomic(self._slot(vid) / "cv_meta.json", json.dumps(meta, indent=2))
 
-    def load_cv(self) -> CVDocument | None:
-        if not self.cv_json_path.exists():
-            return None
-        return CVDocument.model_validate_json(self.cv_json_path.read_text(encoding="utf-8"))
+    def load_cv(self, vid: str = GENERAL) -> CVDocument | None:
+        path = self._slot(vid) / "cv.json"
+        return CVDocument.model_validate_json(path.read_text(encoding="utf-8")) if path.exists() else None
 
-    def cv_html(self) -> str:
-        return self.cv_html_path.read_text(encoding="utf-8") if self.cv_html_path.exists() else ""
+    def cv_html(self, vid: str = GENERAL) -> str:
+        path = self._slot(vid) / "cv.html"
+        return path.read_text(encoding="utf-8") if path.exists() else ""
 
-    def cv_meta(self) -> dict:
-        if not self.cv_meta_path.exists():
-            return {}
-        return json.loads(self.cv_meta_path.read_text(encoding="utf-8"))
+    def cv_meta(self, vid: str = GENERAL) -> dict:
+        path = self._slot(vid) / "cv_meta.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    # ---- cover letter -------------------------------------------------
+
+    def load_letter(self, vid: str = GENERAL) -> dict:
+        path = self._slot(vid) / "letter.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    def save_letter(self, letter: dict, vid: str = GENERAL) -> None:
+        _write_atomic(self._slot(vid) / "letter.json", json.dumps(letter, indent=2))

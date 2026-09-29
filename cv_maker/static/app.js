@@ -53,7 +53,8 @@ function render(next) {
   status.classList.toggle("off", !ai.ready);
   $("add").disabled = !ai_enabled;
 
-  if (document.activeElement !== $("target")) $("target").value = settings.target || "";
+  if (document.activeElement !== $("target")) $("target").value = state.target || "";
+  $("aim-title").textContent = state.active.id === "general" ? "Aim the CV" : `Job ad for ${state.active.name}`;
   $("auto").checked = !!settings.auto_rebuild;
   $("page-size-select").value = settings.page_size;
   applyPageSize(settings.page_size);
@@ -72,6 +73,8 @@ function render(next) {
   layoutPages();
   runChecks();
   renderSections();
+  renderVersions();
+  renderApplications();
   renderMemory();
   renderHistory();
 }
@@ -531,7 +534,7 @@ function downloadPdf() {
 
 function switchTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
-  ["cv", "memory", "history"].forEach((t) => { $(`tab-${t}`).hidden = t !== name; });
+  ["cv", "letter", "applications", "memory", "history"].forEach((t) => { if ($(`tab-${t}`)) $(`tab-${t}`).hidden = t !== name; });
 }
 
 // ---------- Design, page fitting and CV check ----------
@@ -727,7 +730,7 @@ function runChecks() {
   if (missing.length) add("info", `Contact details missing: ${missing.join(", ")}`, "Add them with Edit on Profile in the Memory tab.");
   else add("ok", "Contact details complete");
 
-  const target = (state.settings.target || "").trim();
+  const target = (state.target || "").trim();
   if (target.split(/\s+/).length >= 15) {
     const words = jobKeywords(target);
     const text = cv.innerText.toLowerCase();
@@ -761,6 +764,144 @@ function runChecks() {
     }
     row.append(el("span", "icon", { ok: "✓", warn: "!", info: "i" }[c.level]), body);
     return row;
+  }));
+}
+
+// ---------- Versions and applications ----------
+
+const NEW_VERSION = "__new__";
+
+function renderVersions() {
+  const sel = $("version-select");
+  const options = [new Option("General CV", "general")];
+  for (const v of state.versions) options.push(new Option(`${v.name} · ${v.status}`, v.id));
+  options.push(new Option("＋ New CV for a job…", NEW_VERSION));
+  sel.replaceChildren(...options);
+  sel.value = state.active.id;
+}
+
+async function openVersion(id, tab = "cv") {
+  await savingEdits;
+  try {
+    render(await api("POST", "/api/versions/active", { id }));
+    showNotice("");
+    switchTab(tab);
+  } catch (err) {
+    showNotice(err.message, true);
+  }
+}
+
+async function saveTarget(target) {
+  try {
+    render(await api("PATCH", `/api/versions/${state.active.id}`, { target }));
+  } catch (err) {
+    showNotice(err.message, true);
+  }
+}
+
+function showAppForm(show) {
+  $("app-form").hidden = !show;
+  if (show) {
+    $("app-form").reset();
+    $("app-form").elements.company.focus();
+  }
+}
+
+async function createApplication(e) {
+  e.preventDefault();
+  const f = $("app-form").elements;
+  const body = { company: f.company.value, role: f.role.value, link: f.link.value, target: f.target.value };
+  await withBusy(busyText("Creating a CV tailored to this job…"), async () => {
+    const next = await api("POST", "/api/versions", body);
+    showAppForm(false);
+    render(next);
+    showNotice(next.notice || "");
+    switchTab("cv");
+  });
+}
+
+async function updateApplication(id, fields) {
+  try {
+    render(await api("PATCH", `/api/versions/${id}`, fields));
+  } catch (err) {
+    showNotice(err.message, true);
+  }
+}
+
+async function deleteApplication(v) {
+  if (!confirm(`Delete the application "${v.name}" and its CV? This can't be undone.`)) return;
+  try {
+    render(await api("DELETE", `/api/versions/${v.id}`));
+  } catch (err) {
+    showNotice(err.message, true);
+  }
+}
+
+function renderApplications() {
+  const list = $("app-list");
+  const counts = {};
+  state.versions.forEach((v) => { counts[v.status] = (counts[v.status] || 0) + 1; });
+  const summary = $("app-summary");
+  if (state.versions.length) {
+    summary.replaceChildren(el("span", "app-stats", ""));
+    const stats = summary.firstChild;
+    stats.append(el("span", "", `${state.versions.length} application${state.versions.length > 1 ? "s" : ""}:`));
+    state.statuses.filter((s) => counts[s]).forEach((s) => stats.append(el("span", `status ${s}`, `${counts[s]} ${s.toLowerCase()}`)));
+  } else {
+    summary.textContent = "Each application gets its own CV, tailored to the job ad, so your general CV stays as it is.";
+  }
+  if (!state.versions.length) {
+    const empty = el("div", "empty");
+    empty.append(el("h3", "", "No applications yet"),
+                 el("p", "", "Click 'New application', paste the job ad, and you'll get a CV tailored to it. Track its status here."));
+    list.replaceChildren(empty);
+    return;
+  }
+  list.replaceChildren(...state.versions.map((v) => {
+    const card = el("div", `app-card${v.id === state.active.id ? " active" : ""}`);
+    const head = el("div");
+    const name = el("div", "name", v.name);
+    name.append(el("span", `status ${v.status}`, v.status));
+    head.append(name);
+    const meta = el("div", "meta");
+    meta.append(`Created ${new Date(v.created).toLocaleDateString()}`);
+    if (v.link) {
+      meta.append(" · ");
+      const a = el("a", "", "Job ad");
+      a.href = /^https?:/i.test(v.link) ? v.link : `https://${v.link}`;
+      a.target = "_blank";
+      a.rel = "noopener";
+      meta.append(a);
+    }
+    head.append(meta);
+
+    const actions = el("div", "actions");
+    actions.append(button("Open CV", "small primary", () => openVersion(v.id)),
+                   button("Cover letter", "small", () => openVersion(v.id, "letter")),
+                   button("Delete", "small danger", () => deleteApplication(v)));
+
+    const fields = el("div", "fields");
+    const status = el("select");
+    state.statuses.forEach((s) => status.append(new Option(s, s)));
+    status.value = v.status;
+    status.addEventListener("change", () => {
+      const patch = { status: status.value };
+      if (status.value === "Applied" && !v.applied) patch.applied = new Date().toISOString().slice(0, 10);
+      updateApplication(v.id, patch);
+    });
+    const applied = el("input");
+    applied.type = "date";
+    applied.value = v.applied || "";
+    applied.addEventListener("change", () => updateApplication(v.id, { applied: applied.value }));
+    const notes = el("textarea");
+    notes.rows = 1;
+    notes.placeholder = "Notes: contact, interview dates, follow-ups…";
+    notes.value = v.notes || "";
+    notes.addEventListener("change", () => updateApplication(v.id, { notes: notes.value }));
+    const wrap = (label, input) => { const l = el("label", "field"); l.append(el("span", "field-label", label), input); return l; };
+    fields.append(wrap("Status", status), wrap("Applied on", applied), wrap("Notes", notes));
+    card.append(head, actions, fields);
+    return card;
   }));
 }
 
@@ -1035,12 +1176,12 @@ $("files").addEventListener("change", () => {
 });
 $("rebuild").addEventListener("click", rebuild);
 $("auto").addEventListener("change", (e) => saveSettings({ auto_rebuild: e.target.checked }));
-$("target").addEventListener("change", (e) => saveSettings({ target: e.target.value }));
+$("target").addEventListener("change", (e) => saveTarget(e.target.value));
 $("page-size-select").addEventListener("change", (e) => saveSettings({ page_size: e.target.value }));
 $("fit").addEventListener("change", (e) => saveSettings({ fit_one_page: e.target.checked }));
 document.querySelectorAll("#template-picker button").forEach((b) =>
   b.addEventListener("click", () => saveSettings({ template: b.dataset.template })));
-$("target").addEventListener("input", () => { state.settings.target = $("target").value; scheduleLayout(); });
+$("target").addEventListener("input", () => { state.target = $("target").value; scheduleLayout(); });
 document.fonts?.ready.then(() => state && (layoutPages(), runChecks()));
 $("cv").addEventListener("input", () => { scheduleEditSave(); scheduleLayout(); });
 $("cv").addEventListener("paste", (e) => {
@@ -1072,6 +1213,16 @@ $("json-save").addEventListener("click", async () => {
 });
 
 $("model-select").addEventListener("change", onModelChange);
+$("version-select").addEventListener("change", (e) => {
+  if (e.target.value === NEW_VERSION) {
+    e.target.value = state.active.id;
+    switchTab("applications");
+    showAppForm(true);
+  } else openVersion(e.target.value);
+});
+$("new-app").addEventListener("click", () => showAppForm(true));
+$("app-cancel").addEventListener("click", () => showAppForm(false));
+$("app-form").addEventListener("submit", createApplication);
 $("download-btn").addEventListener("click", downloadModel);
 $("key-form").addEventListener("submit", saveKey);
 $("key-remove").addEventListener("click", removeKey);
