@@ -57,3 +57,47 @@ def test_tidy_removes_empty_duplicate_and_redundant_sections():
     assert [s.heading for s in cv.sections] == ["Experience"]
     assert cv.sections[0].entries[0].bullets == ["Built it", "Shipped it"]
     assert "Built it" in render_cv(cv)
+
+
+def test_publications_are_not_listed_as_awards():
+    from cv_maker.schema import Achievement
+    memory = Memory(achievements=[
+        Achievement(id="p", kind="publication", title="Wildfire impacts on organic matter", date="2025-03"),
+        Achievement(id="c", kind="certification", title="AWS Cloud Practitioner"),
+        Achievement(id="a", kind="award", title="Dean's List"),
+    ])
+    headings = {s.heading: s.items for s in assemble_cv(memory).sections}
+    assert headings["Publications & Presentations"] == ["Wildfire impacts on organic matter — Mar 2025"]
+    assert headings["Certifications"] == ["AWS Cloud Practitioner"]
+    assert headings["Awards"] == ["Dean's List"]
+
+
+def test_degree_filed_as_a_highlight_becomes_the_title():
+    memory = Memory(education=[Education(
+        id="e", institution="UCLA", grade="3.6/4.0",
+        highlights=["Bachelor of Science in Data Theory", "Coursework: Machine Learning"],
+    )])
+    entry = assemble_cv(memory).sections[0].entries[0]
+    assert entry.title == "Bachelor of Science in Data Theory" and entry.subtitle == "UCLA"
+    assert entry.bullets == ["Coursework: Machine Learning"] and entry.description == "GPA 3.6/4.0"
+
+
+def test_placeholders_are_flagged_but_labels_are_not():
+    cv = tidy_cv(CVDocument(name="K", sections=[CVSection(heading="Projects", entries=[
+        CVEntry(title="Bot", dates="[month year]", bullets=["Peak rating of [rating] on [N replays]"]),
+        CVEntry(title="Courses", bullets=["[Programming]: Python"]),
+    ])]))
+    assert "[month year]" in cv.advice[0] and "[rating]" in cv.advice[0] and "[N replays]" in cv.advice[0]
+    assert "[Programming]" not in cv.advice[0]
+    html = render_cv(cv)
+    assert '<mark class="placeholder">[rating]</mark>' in html and "<mark class=\"placeholder\">[Programming]" not in html
+
+
+def test_render_applies_order_and_hidden_sections():
+    cv = CVDocument(name="K", summary="Hi", sections=[
+        CVSection(heading="Experience", items=["a"]), CVSection(heading="Education", items=["b"]),
+        CVSection(heading="Skills", items=["c"]),
+    ])
+    html = render_cv(cv, order=["skills", "education"], hidden=["experience", "summary"])
+    assert html.index('data-section="skills"') < html.index('data-section="education"') < html.index('data-section="experience"')
+    assert 'data-section="experience" hidden' in html and 'data-section="summary" hidden' in html

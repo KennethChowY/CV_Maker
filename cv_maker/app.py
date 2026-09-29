@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from .ai import AIError, Attachment
 from .models import NO_AI_MESSAGE, ModelManager, build_ai, credentials_configured, default_choice
-from .render import basic_cv, render_cv, tidy_cv
+from .render import basic_cv, render_cv, section_list, tidy_cv
 from .schema import Memory
 from .store import Store
 
@@ -58,11 +58,15 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     store = Store(data_dir or os.environ.get("CV_MAKER_DATA", "data"))
     models = ModelManager(store, fixed=ai, pinned=True) if ai is not _UNSET else ModelManager(store, backend=backend)
 
+    def layout() -> tuple[list[str], list[str]]:
+        settings = store.load_settings()
+        return settings["section_order"], settings["hidden_sections"]
+
     def build(target: str) -> list[str]:
         memory = store.load_memory()
         ai = models.current()
         cv = tidy_cv(ai.build_cv(memory, target) if ai else basic_cv(memory))
-        store.save_cv(cv, render_cv(cv), target)
+        store.save_cv(cv, render_cv(cv, *layout()), target)
         return cv.advice
 
     def state(**extra) -> Response:
@@ -76,6 +80,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
             "cv_html": store.cv_html(),
             "cv_meta": store.cv_meta(),
             "advice": cv.advice if cv else [],
+            "sections": section_list(cv, *layout()) if cv else [],
             "ai_enabled": ai is not None,
             "ai_status": ai_status(ai),
         }
@@ -169,6 +174,20 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         store.save_cv_edits(clean_html(html))
         return state()
 
+    @app.post("/api/cv/layout")
+    def save_layout():
+        body = request.get_json(silent=True) or {}
+        order, hidden = body.get("order"), body.get("hidden")
+        if not (isinstance(order, list) and isinstance(hidden, list)):
+            return error("Missing section order.")
+        store.save_settings({"section_order": [str(x) for x in order], "hidden_sections": [str(x) for x in hidden]})
+        cv = store.load_cv()
+        if cv and store.cv_meta().get("edited") and isinstance(body.get("html"), str):
+            store.save_cv_edits(clean_html(body["html"]))  # keep hand edits; the page already moved the sections
+        elif cv:
+            store.save_cv_html(render_cv(cv, *layout()))
+        return state()
+
     @app.post("/api/cv/learn")
     def learn_from_cv():
         ai = models.current()
@@ -201,6 +220,9 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         except ValidationError as e:
             return error(f"That memory isn't valid: {e.errors()[0]['msg']} at {'.'.join(map(str, e.errors()[0]['loc']))}")
         store.save_memory(memory, source="manual", input_text="Edited memory directly", changes=["Manual edit"])
+        if request.args.get("rebuild") == "0":
+            # Fixing several entries shouldn't trigger a slow rebuild after each one.
+            return state(notice="Saved to memory. Click 'Rebuild CV' when you've finished making changes.")
         return state(**auto_rebuild())
 
     @app.post("/api/settings")

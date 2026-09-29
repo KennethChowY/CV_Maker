@@ -50,6 +50,12 @@ Rules:
 - `upsert_*` lists: items that are new or changed. To change an existing item, repeat it IN FULL \
 with the SAME id and the change applied. New items get a new short id like "exp-acme-2021". \
 Leave a list empty if nothing in it changed.
+- Keep separate roles separate: a different organisation, department or lab is a different \
+item, even if held at the same time. Never move highlights from one item to another.
+- Personal, school and hobby projects go in `upsert_projects`, not experience. Papers, posters \
+and talks go in `upsert_achievements` with kind "publication" or "talk".
+- Text in square brackets that is an unfilled template gap, like [month year] or [rating], is \
+not a fact: leave it out and ask for the real value in `questions`.
 - When a new role replaces an old one (a promotion or new job), also upsert the old role with its end date.
 - `skills`: only skill groups with new skills to add.
 - `add_preferences`: instructions about how the CV should be written (tone, length, spelling).
@@ -81,6 +87,7 @@ Return:
   for a named role.
 
 Never invent employers, dates, numbers, tools or results that are not in the memory.
+Leave out unfilled template gaps in square brackets, such as [rating].
 Follow every item in the memory's `preferences`.
 
 Today's date is {today}."""

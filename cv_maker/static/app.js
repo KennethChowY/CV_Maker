@@ -68,6 +68,7 @@ function render(next) {
   renderList($("advice"), state.advice);
   $("advice-card").hidden = !state.advice.length;
 
+  renderSections();
   renderMemory();
   renderHistory();
 }
@@ -107,14 +108,68 @@ function setEditStatus(mode) {
 }
 
 function applyPageSize(size) {
-  $("page-size").textContent = `@page { size: ${size === "letter" ? "letter" : "A4"}; }`;
+  const page = size === "letter" ? "letter" : "A4";
+  // Browsers print their own header and footer (date, page address) in the page margin.
+  // Where the browser can repeat padding on every printed page, use no page margin at all,
+  // so there's nowhere for that header and footer to go.
+  $("page-size").textContent = CSS.supports("box-decoration-break", "clone")
+    ? `@page { size: ${page}; margin: 0; }
+       @media print { .paper, .paper.letter { padding: 13mm 14mm !important; box-decoration-break: clone; } }`
+    : `@page { size: ${page}; margin: 13mm 14mm; }`;
   $("cv").classList.toggle("letter", size === "letter");
 }
 
 const SECTION_LABELS = {
   experience: "Experience", education: "Education", projects: "Projects",
-  achievements: "Certifications, awards & more",
+  achievements: "Publications, certifications & awards",
 };
+const ADD_LABELS = { experience: "job or role", education: "school or degree", projects: "project", achievements: "publication, award…" };
+
+// [field, label, type, options/placeholder]. type: text (default), select, textarea, lines, csv
+const FIELDS = {
+  experience: [
+    ["role", "Job title"], ["organization", "Organisation (company, lab, department)"],
+    ["kind", "Type", "select", ["work", "internship", "volunteering", "freelance", "other"]],
+    ["location", "Location"], ["start", "Start", "text", "e.g. 2024-07"], ["end", "End", "text", "e.g. 2025-06 or Present"],
+    ["description", "Short description", "textarea"],
+    ["highlights", "What you did and achieved (one per line)", "lines"],
+    ["skills", "Skills and tools used (comma separated)", "csv"],
+  ],
+  education: [
+    ["qualification", "Qualification", "text", "e.g. BSc"], ["field", "Subject", "text", "e.g. Data Theory"],
+    ["institution", "Institution"], ["location", "Location"],
+    ["start", "Start", "text", "e.g. 2021-09"], ["end", "End", "text", "e.g. 2025-06"],
+    ["grade", "Grade or GPA", "text", "e.g. 3.6/4.0"],
+    ["highlights", "Details (one per line): coursework, honours…", "lines"],
+  ],
+  projects: [
+    ["name", "Project name"], ["role", "Your role (optional)"], ["link", "Link (optional)"],
+    ["start", "Start", "text", "e.g. 2025-01"], ["end", "End", "text", "e.g. 2025-06 or Present"],
+    ["description", "Short description", "textarea"],
+    ["highlights", "What you did and achieved (one per line)", "lines"],
+    ["skills", "Skills and tools used (comma separated)", "csv"],
+  ],
+  achievements: [
+    ["title", "Title"], ["kind", "Type", "select", ["publication", "talk", "certification", "award", "other"]],
+    ["issuer", "Issuer, journal or venue"], ["date", "Date", "text", "e.g. 2025-03"],
+    ["description", "Description", "textarea"],
+  ],
+};
+const PROFILE_FIELDS = [
+  ["name", "Full name"], ["headline", "Headline", "text", "e.g. Data Science Graduate"],
+  ["email", "Email"], ["phone", "Phone"], ["location", "Location"],
+  ["links", "Links (one per line, e.g. GitHub: github.com/you)", "lines"],
+  ["summary", "Your own summary (optional)", "textarea"],
+];
+const LIST_SECTIONS = [
+  ["skills", "Skills", "One group per line, e.g. Programming: Python, R, SQL"],
+  ["languages", "Languages", "One per line, e.g. Cantonese (native)"],
+  ["interests", "Interests", "One per line"],
+  ["preferences", "CV preferences", "One per line, e.g. Use UK spelling"],
+  ["notes", "Other notes", "One per line, e.g. Targeting data science roles"],
+];
+
+let editing = null;  // {section, index} | {section: "profile"} | {section: "list:<name>"}
 
 function itemView(section, item) {
   switch (section) {
@@ -146,26 +201,187 @@ function el(tag, className, text) {
   return node;
 }
 
+function button(text, className, onClick, title) {
+  const b = el("button", className, text);
+  b.type = "button";
+  if (title) b.title = title;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+// ---- form helpers ----
+
+function fieldInput([name, label, type = "text", extra], value) {
+  const wrap = el("label", "field");
+  wrap.append(el("span", "field-label", label));
+  let input;
+  if (type === "select") {
+    input = el("select");
+    const options = extra.includes(value) || !value ? extra : [value, ...extra];
+    options.forEach((o) => input.append(new Option(o, o)));
+    input.value = value || extra[0];
+  } else if (type === "textarea" || type === "lines") {
+    input = el("textarea");
+    input.rows = type === "lines" ? Math.max(3, (value || []).length + 1) : 2;
+    input.value = type === "lines" ? (value || []).join("\n") : value || "";
+  } else {
+    input = el("input");
+    input.type = "text";
+    input.value = type === "csv" ? (value || []).join(", ") : value || "";
+    if (extra) input.placeholder = extra;
+  }
+  input.name = name;
+  input.dataset.type = type;
+  wrap.append(input);
+  return wrap;
+}
+
+function readForm(form) {
+  const out = {};
+  form.querySelectorAll("[name]").forEach((input) => {
+    const v = input.value;
+    switch (input.dataset.type) {
+      case "lines": out[input.name] = v.split("\n").map((s) => s.trim()).filter(Boolean); break;
+      case "csv": out[input.name] = v.split(",").map((s) => s.trim()).filter(Boolean); break;
+      default: out[input.name] = v.trim();
+    }
+  });
+  return out;
+}
+
+function formShell(onSave, extraButtons = []) {
+  const form = el("form", "mem-form");
+  const actions = el("div", "row end");
+  actions.append(...extraButtons, button("Cancel", "", () => { editing = null; renderMemory(); }));
+  const save = el("button", "primary", "Save");
+  save.type = "submit";
+  actions.append(save);
+  form.addEventListener("submit", (e) => { e.preventDefault(); onSave(form); });
+  return [form, actions];
+}
+
+// Converting between experience and projects when an entry is in the wrong section.
+function moveItem(item, from, to) {
+  const shared = { id: item.id, start: item.start, end: item.end, description: item.description,
+                   highlights: item.highlights, skills: item.skills || [] };
+  if (from === "experience" && to === "projects") {
+    return { ...shared, name: item.role || item.organization, role: "", link: "" };
+  }
+  if (from === "projects" && to === "experience") {
+    return { ...shared, role: item.role || item.name, organization: item.role ? item.name : "",
+             kind: "other", location: "" };
+  }
+  return item;
+}
+
+function itemForm(section, index) {
+  const isNew = index < 0;
+  const item = isNew ? {} : state.memory[section][index];
+  const canMove = section === "experience" || section === "projects";
+  const moveSelect = el("select");
+  if (canMove) {
+    moveSelect.append(new Option(`Keep in ${SECTION_LABELS[section]}`, section));
+    const other = section === "experience" ? "projects" : "experience";
+    moveSelect.append(new Option(`Move to ${SECTION_LABELS[other]}`, other));
+  }
+  const [form, actions] = formShell((f) => {
+    const memory = structuredClone(state.memory);
+    let updated = { ...item, ...readForm(f) };
+    const target = canMove ? moveSelect.value : section;
+    if (target !== section) updated = moveItem(updated, section, target);
+    if (isNew) memory[section].push(updated);
+    else if (target === section) memory[section][index] = updated;
+    else {
+      memory[section].splice(index, 1);
+      memory[target].push(updated);
+    }
+    editing = null;
+    saveMemory(memory, "Saving…");
+  }, isNew ? [] : [button("Delete", "danger", () => removeItem(section, index, itemView(section, item).title))]);
+  FIELDS[section].forEach((spec) => form.append(fieldInput(spec, item[spec[0]])));
+  if (canMove && !isNew) {
+    const wrap = el("label", "field");
+    wrap.append(el("span", "field-label", "Section"), moveSelect);
+    form.append(wrap);
+  }
+  form.append(actions);
+  return form;
+}
+
+function profileForm() {
+  const m = state.memory;
+  const values = { ...m.profile, links: m.profile.links.map((l) => (l.label ? `${l.label}: ${l.url}` : l.url)),
+                   summary: m.summary };
+  const [form, actions] = formShell((f) => {
+    const data = readForm(f);
+    const memory = structuredClone(state.memory);
+    const links = data.links.map((line) => {
+      const match = line.match(/^([^:]{1,30}):\s*(\S.*)$/);
+      return match && !/^https?$/i.test(match[1]) ? { label: match[1].trim(), url: match[2].trim() } : { label: "", url: line };
+    });
+    memory.profile = { ...memory.profile, ...data, links };
+    delete memory.profile.summary;
+    memory.summary = data.summary;
+    editing = null;
+    saveMemory(memory, "Saving…");
+  });
+  PROFILE_FIELDS.forEach((spec) => form.append(fieldInput(spec, values[spec[0]])));
+  form.append(actions);
+  return form;
+}
+
+function listForm(name, hint) {
+  const m = state.memory;
+  const lines = name === "skills" ? m.skills.map((g) => (g.category ? `${g.category}: ${g.skills.join(", ")}` : g.skills.join(", "))) : m[name];
+  const [form, actions] = formShell((f) => {
+    const values = readForm(f).lines;
+    const memory = structuredClone(state.memory);
+    memory[name] = name === "skills"
+      ? values.map((line) => {
+          const [cat, rest] = line.includes(":") ? line.split(/:(.*)/s) : ["", line];
+          return { category: cat.trim(), skills: rest.split(",").map((s) => s.trim()).filter(Boolean) };
+        })
+      : values;
+    editing = null;
+    saveMemory(memory, "Saving…");
+  });
+  form.append(fieldInput(["lines", hint, "lines"], lines), actions);
+  return form;
+}
+
+function sectionBlock(title, onEdit, editLabel = "Edit") {
+  const sec = el("div", "mem-section");
+  const head = el("div", "mem-head");
+  head.append(el("h3", "", title));
+  if (onEdit) head.append(button(editLabel, "small", onEdit));
+  sec.append(head);
+  return sec;
+}
+
 function renderMemory() {
   const m = state.memory;
   const view = $("memory-view");
   const blocks = [];
+  const open = (e) => { editing = e; renderMemory(); };
 
   const p = m.profile;
-  const profileLines = [p.name, p.headline, p.email, p.phone, p.location, ...p.links.map((l) => `${l.label}: ${l.url}`)].filter(Boolean);
-  if (profileLines.length || m.summary) {
-    const sec = el("div", "mem-section");
-    sec.append(el("h3", "", "Profile"));
-    profileLines.forEach((line) => sec.append(el("div", "", line)));
-    if (m.summary) sec.append(el("p", "meta", m.summary));
-    blocks.push(sec);
+  const profile = sectionBlock("Profile", () => open({ section: "profile" }));
+  if (editing?.section === "profile") profile.append(profileForm());
+  else {
+    const lines = [p.name, p.headline, p.email, p.phone, p.location, ...p.links.map((l) => `${l.label ? `${l.label}: ` : ""}${l.url}`)].filter(Boolean);
+    lines.forEach((line) => profile.append(el("div", "", line)));
+    if (m.summary) profile.append(el("p", "meta", m.summary));
+    if (!lines.length && !m.summary) profile.append(el("div", "meta", "Name and contact details go here."));
   }
+  blocks.push(profile);
 
   for (const [key, label] of Object.entries(SECTION_LABELS)) {
-    if (!m[key].length) continue;
-    const sec = el("div", "mem-section");
-    sec.append(el("h3", "", `${label} (${m[key].length})`));
+    const sec = sectionBlock(`${label} (${m[key].length})`, () => open({ section: key, index: -1 }), `+ Add ${ADD_LABELS[key]}`);
     m[key].forEach((item, index) => {
+      if (editing?.section === key && editing.index === index) {
+        sec.append(itemForm(key, index));
+        return;
+      }
       const v = itemView(key, item);
       const row = el("div", "mem-item");
       const body = el("div", "body");
@@ -176,36 +392,29 @@ function renderMemory() {
         v.bullets.forEach((b) => ul.append(el("li", "", b)));
         body.append(ul);
       }
-      const del = el("button", "del", "×");
-      del.title = "Remove from memory";
-      del.addEventListener("click", () => removeItem(key, index, v.title));
-      row.append(body, del);
+      const tools = el("div", "item-tools");
+      tools.append(button("Edit", "small", () => open({ section: key, index })),
+                   button("×", "del", () => removeItem(key, index, v.title), "Remove from memory"));
+      row.append(body, tools);
       sec.append(row);
     });
+    if (editing?.section === key && editing.index === -1) sec.append(itemForm(key, -1));
     blocks.push(sec);
   }
 
-  const lists = [
-    ["Skills", m.skills.map((g) => `${g.category}: ${g.skills.join(", ")}`)],
-    ["Languages", m.languages], ["Interests", m.interests],
-    ["CV preferences", m.preferences], ["Other notes", m.notes],
-  ];
-  for (const [label, items] of lists) {
-    if (!items.length) continue;
-    const sec = el("div", "mem-section");
-    sec.append(el("h3", "", label));
-    const ul = el("ul");
-    items.forEach((i) => ul.append(el("li", "", i)));
-    sec.append(ul);
+  for (const [name, label, hint] of LIST_SECTIONS) {
+    const items = name === "skills" ? m.skills.map((g) => (g.category ? `${g.category}: ${g.skills.join(", ")}` : g.skills.join(", "))) : m[name];
+    const sec = sectionBlock(label, () => open({ section: `list:${name}` }));
+    if (editing?.section === `list:${name}`) sec.append(listForm(name, hint));
+    else if (items.length) {
+      const ul = el("ul");
+      items.forEach((i) => ul.append(el("li", "", i)));
+      sec.append(ul);
+    } else sec.append(el("div", "meta", "Nothing yet."));
     blocks.push(sec);
-  }
-
-  if (!blocks.length) {
-    const empty = el("div", "empty");
-    empty.append(el("h3", "", "Memory is empty"), el("p", "", "Anything you add on the left is stored here."));
-    blocks.push(empty);
   }
   view.replaceChildren(...blocks);
+  view.querySelector(".mem-form input, .mem-form textarea")?.focus();
 }
 
 function renderHistory() {
@@ -279,7 +488,7 @@ async function learnFromEdits() {
 
 async function saveMemory(memory, busyText = "Saving memory…") {
   return withBusy(busyText, async () => {
-    const next = await api("PUT", "/api/memory", memory);
+    const next = await api("PUT", "/api/memory?rebuild=0", memory);
     render(next);
     showNotice(next.notice || "");
     return true;
@@ -320,6 +529,104 @@ function downloadPdf() {
 function switchTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   ["cv", "memory", "history"].forEach((t) => { $(`tab-${t}`).hidden = t !== name; });
+}
+
+// ---------- Section arranger ----------
+
+let dragKey = null;
+
+function renderSections() {
+  const rows = state.sections || [];
+  $("sections-card").hidden = !rows.length;
+  const movable = rows.filter((r) => !r.fixed);
+  $("section-list").replaceChildren(...rows.map((row) => {
+    const li = el("li");
+    li.dataset.key = row.key;
+    li.classList.toggle("is-hidden", row.hidden);
+    const check = el("input");
+    check.type = "checkbox";
+    check.checked = !row.hidden;
+    check.title = row.hidden ? "Show this section" : "Hide this section";
+    check.addEventListener("change", () => saveLayout(movable.map((r) => r.key), toggled(row.key, !check.checked)));
+    li.append(el("span", "grip", row.fixed ? "" : "⋮⋮"), check, el("span", "name", row.heading));
+    if (row.fixed) {
+      li.title = "The summary always stays at the top.";
+      return li;
+    }
+    const i = movable.indexOf(row);
+    const up = button("▲", "move", () => moveTo(row.key, i - 1), "Move up");
+    const down = button("▼", "move", () => moveTo(row.key, i + 1), "Move down");
+    up.disabled = i === 0;
+    down.disabled = i === movable.length - 1;
+    li.append(up, down);
+
+    li.draggable = true;
+    li.addEventListener("dragstart", (e) => {
+      dragKey = row.key;
+      li.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", row.key);
+    });
+    li.addEventListener("dragend", () => {
+      dragKey = null;
+      document.querySelectorAll(".section-list li").forEach((n) => n.classList.remove("dragging", "drop-before", "drop-after"));
+    });
+    li.addEventListener("dragover", (e) => {
+      if (!dragKey || dragKey === row.key) return;
+      e.preventDefault();
+      const after = e.clientY > li.getBoundingClientRect().top + li.offsetHeight / 2;
+      li.classList.toggle("drop-before", !after);
+      li.classList.toggle("drop-after", after);
+    });
+    li.addEventListener("dragleave", () => li.classList.remove("drop-before", "drop-after"));
+    li.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const after = li.classList.contains("drop-after");
+      li.classList.remove("drop-before", "drop-after");
+      if (!dragKey || dragKey === row.key) return;
+      const keys = movable.map((r) => r.key).filter((k) => k !== dragKey);
+      keys.splice(keys.indexOf(row.key) + (after ? 1 : 0), 0, dragKey);
+      saveLayout(keys, hiddenKeys());
+    });
+    return li;
+  }));
+}
+
+function hiddenKeys() {
+  return (state.sections || []).filter((r) => r.hidden).map((r) => r.key);
+}
+
+function toggled(key, hide) {
+  const keys = hiddenKeys().filter((k) => k !== key);
+  return hide ? [...keys, key] : keys;
+}
+
+function moveTo(key, index) {
+  const keys = state.sections.filter((r) => !r.fixed).map((r) => r.key).filter((k) => k !== key);
+  keys.splice(Math.max(0, Math.min(index, keys.length)), 0, key);
+  saveLayout(keys, hiddenKeys());
+}
+
+async function saveLayout(order, hidden) {
+  // Move the sections on the page right away (this also keeps any hand edits),
+  // then store the layout so future rebuilds use it too.
+  const cv = $("cv");
+  for (const key of order) {
+    const node = [...cv.querySelectorAll("section[data-section]")].find((n) => n.dataset.section === key);
+    if (node) cv.append(node);
+  }
+  cv.querySelectorAll("section[data-section]").forEach((n) => { n.hidden = hidden.includes(n.dataset.section); });
+  state.sections = [
+    ...state.sections.filter((r) => r.fixed),
+    ...order.map((k) => state.sections.find((r) => r.key === k)).filter(Boolean),
+  ].map((r) => ({ ...r, hidden: hidden.includes(r.key) }));
+  renderSections();
+  await savingEdits;
+  try {
+    render(await api("POST", "/api/cv/layout", { order, hidden, html: cv.innerHTML }));
+  } catch (err) {
+    showNotice(err.message, true);
+  }
 }
 
 // ---------- AI model picker ----------

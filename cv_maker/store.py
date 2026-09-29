@@ -104,7 +104,8 @@ class Store:
     # ---- settings -----------------------------------------------------
 
     def load_settings(self) -> dict:
-        defaults = {"auto_rebuild": True, "target": "", "page_size": "A4", "ai_backend": "", "ai_model": ""}
+        defaults = {"auto_rebuild": True, "target": "", "page_size": "A4", "ai_backend": "", "ai_model": "",
+                    "section_order": [], "hidden_sections": []}
         if self.settings_path.exists():
             defaults.update(json.loads(self.settings_path.read_text(encoding="utf-8")))
         return defaults
@@ -122,6 +123,10 @@ class Store:
         _write_atomic(self.cv_html_path, html)
         meta = {"generated_at": _now(), "target": target, "edited": False}
         _write_atomic(self.cv_meta_path, json.dumps(meta, indent=2))
+
+    def save_cv_html(self, html: str) -> None:
+        """Replace the CV page (e.g. after re-arranging sections) without marking it as hand-edited."""
+        _write_atomic(self.cv_html_path, html)
 
     def save_cv_edits(self, html: str) -> None:
         _write_atomic(self.cv_html_path, html)

@@ -46,13 +46,24 @@ It can use either:
   auto-rebuild over manual edits. Click **Save edits to memory** and the AI
   folds your corrections and preferred wording back into memory, so future
   versions keep them.
+- **Fixing wrong information.** In the **Memory** tab, click **Edit** on any
+  entry to correct it in a form, move it between Experience and Projects, or
+  change a publication's type. **+ Add** creates a new entry. These edits don't
+  rebuild the CV each time; click **Rebuild CV** when you're done.
+- **Section order.** In the **Sections** box, drag sections into the order you
+  want (or use the arrows), and untick any you want to hide. The order is kept
+  for every future rebuild.
+- **Gaps.** Unfilled placeholders like `[rating]` are highlighted on the CV and
+  listed under *Tips*, so nothing half-finished gets sent by accident.
 - **Aim the CV.** Paste a job ad or describe a role and the CV is tailored to it.
 - **Import.** Attach an existing CV (PDF or text) to fill the memory in one go.
 - **Preferences.** Say things like *"always use UK spelling"* or *"keep it to
   one page"*. They're remembered and applied to every rebuild.
 - **PDF.** **Download PDF** opens the print dialog with a print-ready layout;
   choose *Save as PDF*. The text in the PDF stays selectable, which
-  applicant-tracking systems need. Pick A4 or US Letter in the toolbar.
+  applicant-tracking systems need. Pick A4 or US Letter in the toolbar. If the
+  PDF shows the date or the page address at the edges, untick **Headers and
+  footers** under *More settings* in the print dialog.
 
 ## Setup
 

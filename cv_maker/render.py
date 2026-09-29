@@ -11,8 +11,35 @@ import re
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup, escape
 
 from .schema import CVDocument, CVEntry, CVSection, Memory
+
+_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+_ONGOING = {"present", "now", "current", "ongoing", "today"}
+
+# Unfilled template gaps like "[month year]" or "[N replays]", but not labels like "[Programming]".
+PLACEHOLDER = re.compile(
+    r"\[[^\]\n]{0,60}\b(?:month|year|date|rating|number|N|X|link|url|your|insert|tbd|todo|e\.g\.|"
+    r"percent|amount|name|company|role|title)\b[^\]\n]{0,60}\]",
+    re.IGNORECASE,
+)
+_DEGREE = re.compile(
+    r"^(bachelor|master|doctor|associate|diploma|ph\.?d|b\.?sc|m\.?sc|b\.?a\b|m\.?a\b|b\.?eng|m\.?eng|mphil|mba|higher diploma)",
+    re.IGNORECASE,
+)
+
+
+def _mark_placeholders(text: str) -> Markup:
+    """Escape text and highlight unfilled placeholders so they're easy to spot on screen."""
+    out, last = [], 0
+    for m in PLACEHOLDER.finditer(text):
+        out.append(escape(text[last:m.start()]))
+        out.append(Markup('<mark class="placeholder">{}</mark>').format(m.group(0)))
+        last = m.end()
+    out.append(escape(text[last:]))
+    return Markup("").join(out)
+
 
 _env = Environment(
     loader=FileSystemLoader(Path(__file__).parent / "templates"),
@@ -20,13 +47,46 @@ _env = Environment(
     trim_blocks=True,
     lstrip_blocks=True,
 )
-
-_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
-_ONGOING = {"present", "now", "current", "ongoing", "today"}
+_env.filters["mark"] = _mark_placeholders
 
 
-def render_cv(cv: CVDocument) -> str:
-    return _env.get_template("cv.html.j2").render(cv=cv)
+def order_sections(cv: CVDocument, order: list[str]) -> CVDocument:
+    """Sections the person has arranged come first, in their order; any others keep their place after."""
+    rank = {h.strip().lower(): i for i, h in enumerate(order)}
+    cv = cv.model_copy(deep=True)
+    cv.sections = sorted(cv.sections, key=lambda s: rank.get(s.heading.strip().lower(), len(rank)))
+    return cv
+
+
+def render_cv(cv: CVDocument, order: list[str] = (), hidden: list[str] = ()) -> str:
+    """HTML for the CV. Hidden sections stay in the page (so they can be shown again) but aren't displayed."""
+    hidden_keys = {h.strip().lower() for h in hidden}
+    return _env.get_template("cv.html.j2").render(cv=order_sections(cv, list(order)), hidden=hidden_keys)
+
+
+def section_list(cv: CVDocument, order: list[str] = (), hidden: list[str] = ()) -> list[dict]:
+    """The CV's sections in display order, for the section arranger on the page."""
+    hidden_keys = {h.strip().lower() for h in hidden}
+    rows = [{"key": "summary", "heading": "Summary", "hidden": "summary" in hidden_keys, "fixed": True}] \
+        if cv.summary else []
+    for sec in order_sections(cv, list(order)).sections:
+        key = sec.heading.strip().lower()
+        rows.append({"key": key, "heading": sec.heading, "hidden": key in hidden_keys, "fixed": False})
+    return rows
+
+
+def placeholders(cv: CVDocument) -> list[str]:
+    texts = [cv.headline, cv.summary]
+    for s in cv.sections:
+        texts += s.items
+        for e in s.entries:
+            texts += [e.title, e.subtitle, e.location, e.dates, e.description, *e.bullets]
+    found: list[str] = []
+    for t in texts:
+        for m in PLACEHOLDER.findall(t):
+            if m not in found:
+                found.append(m)
+    return found
 
 
 def date_key(value: str) -> tuple[int, int]:
@@ -109,18 +169,29 @@ def assemble_cv(
     sections: list[CVSection] = []
     experience = experience_section("Experience", jobs) if jobs else None
 
-    education_items = [e for e in _newest_first(memory.education) if keep(e)]
-    education = CVSection(heading="Education", entries=[
-        CVEntry(
-            title=", ".join(x for x in (e.qualification, e.field) if x) or e.institution,
-            subtitle=e.institution if (e.qualification or e.field) else "",
+    def education_entry(e) -> CVEntry:
+        degree = ", ".join(x for x in (e.qualification, e.field) if x)
+        details = points(e, e.highlights)
+        if not degree:
+            # Models sometimes file the degree name as a highlight; promote it to the title.
+            named = next((d for d in details if _DEGREE.match(d.strip())), "")
+            if named:
+                degree, details = named.strip(), [d for d in details if d is not named]
+        grade = e.grade.strip()
+        if grade and re.fullmatch(r"[\d.]+\s*/\s*[\d.]+", grade):
+            grade = f"GPA {grade}"
+        return CVEntry(
+            title=degree or e.institution,
+            subtitle=e.institution if degree else "",
             location=e.location,
             dates=date_range(e.start, e.end),
-            description=e.grade,
-            bullets=points(e, e.highlights),
+            description=grade,
+            bullets=details,
         )
-        for e in education_items
-    ]) if education_items else None
+
+    education_items = [e for e in _newest_first(memory.education) if keep(e)]
+    education = CVSection(heading="Education", entries=[education_entry(e) for e in education_items]) \
+        if education_items else None
 
     # Early-career CVs lead with education; everyone else leads with experience.
     has_full_jobs = any(e.kind in ("work", "freelance") for e in jobs)
@@ -149,10 +220,24 @@ def assemble_cv(
     if skill_lines:
         sections.append(CVSection(heading="Skills", items=skill_lines))
 
-    awards = sorted((a for a in memory.achievements if keep(a)), key=lambda a: date_key(a.date), reverse=True)
-    if awards:
-        sections.append(CVSection(heading="Certifications & Awards", items=[
-            " — ".join(x for x in (a.title, a.issuer, pretty_date(a.date)) if x) for a in awards
+    achievements = sorted((a for a in memory.achievements if keep(a)), key=lambda a: date_key(a.date), reverse=True)
+    groups = [
+        ("Publications & Presentations", ("publication", "paper", "talk", "presentation", "poster", "conference")),
+        ("Certifications", ("certification", "certificate", "license", "course")),
+        ("Awards", ("award", "honour", "honor", "scholarship", "prize")),
+    ]
+    placed: set[int] = set()
+    for heading, kinds in groups:
+        members = [a for a in achievements if a.kind.strip().lower() in kinds]
+        placed |= {id(a) for a in members}
+        if members:
+            sections.append(CVSection(heading=heading, items=[
+                " — ".join(x for x in (a.title, a.issuer, pretty_date(a.date)) if x) for a in members
+            ]))
+    others = [a for a in achievements if id(a) not in placed]
+    if others:
+        sections.append(CVSection(heading="Achievements", items=[
+            " — ".join(x for x in (a.title, a.issuer, pretty_date(a.date)) if x) for a in others
         ]))
     if memory.languages:
         sections.append(CVSection(heading="Languages", items=[", ".join(memory.languages)]))
@@ -199,4 +284,9 @@ def tidy_cv(cv: CVDocument) -> CVDocument:
     cv.contact = [c.strip() for c in cv.contact if c.strip()]
     cv.links = [link for link in cv.links if link.url.strip()]
     cv.name = cv.name.strip() or "Your Name"
+    gaps = placeholders(cv)
+    if gaps:
+        note = "Fill in the highlighted gaps still on your CV: " + ", ".join(gaps[:6]) + \
+               ". Tell the app the real details, or fix them in the Memory tab."
+        cv.advice = [note] + [a for a in cv.advice if not a.startswith("Fill in the highlighted gaps")]
     return cv

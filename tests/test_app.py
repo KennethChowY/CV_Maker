@@ -186,3 +186,39 @@ def test_store_history_is_newest_first(tmp_path):
     store.save_memory(Memory(), source="input", input_text="one")
     store.save_memory(Memory(), source="input", input_text="two")
     assert [h["input"] for h in store.history()] == ["two", "one"]
+
+
+def test_section_layout_is_saved_and_survives_rebuilds(client, ai):
+    client.post("/api/ingest", data={"text": "Engineer"})
+    client.put("/api/memory?rebuild=0", json={
+        "profile": {"name": "Ada"}, "experience": [{"id": "x", "role": "Engineer"}],
+        "skills": [{"category": "Languages", "skills": ["Python"]}],
+    })
+    ai.build_cv = lambda memory, target="": CVDocument(name="Ada", sections=[
+        CVSection(heading="Experience", items=["job"]), CVSection(heading="Skills", items=["Python"]),
+    ])
+    client.post("/api/build", json={})
+    body = client.post("/api/cv/layout", json={"order": ["skills", "experience"], "hidden": []}).get_json()
+    assert [s["key"] for s in body["sections"]] == ["skills", "experience"]
+    assert body["cv_html"].index('data-section="skills"') < body["cv_html"].index('data-section="experience"')
+    assert body["cv_meta"]["edited"] is False
+
+    body = client.post("/api/build", json={}).get_json()  # a rebuild keeps the chosen order
+    assert [s["key"] for s in body["sections"]] == ["skills", "experience"]
+    body = client.post("/api/cv/layout", json={"order": ["skills", "experience"], "hidden": ["skills"]}).get_json()
+    assert body["sections"][0]["hidden"] is True and 'data-section="skills" hidden' in body["cv_html"]
+
+
+def test_layout_change_keeps_hand_edits(client):
+    client.post("/api/ingest", data={"text": "Engineer"})
+    client.post("/api/cv", json={"html": "<section data-section='experience'><p>my words</p></section>"})
+    body = client.post("/api/cv/layout", json={
+        "order": ["experience"], "hidden": [], "html": "<section data-section='experience'><p>my words, moved</p></section>",
+    }).get_json()
+    assert "my words, moved" in body["cv_html"] and body["cv_meta"]["edited"] is True
+
+
+def test_memory_tab_edits_do_not_trigger_a_rebuild(client, ai):
+    body = client.put("/api/memory?rebuild=0", json={"profile": {"name": "Grace"}}).get_json()
+    assert ai.targets == [] and "Rebuild CV" in body["notice"]
+    assert body["memory"]["profile"]["name"] == "Grace"

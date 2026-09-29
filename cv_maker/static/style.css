@@ -157,3 +157,35 @@ textarea:focus, button:focus-visible, select:focus-visible { outline: 2px solid 
   .paper, .paper.letter { width: auto; min-height: 0; padding: 0; margin: 0; box-shadow: none; }
   @page { margin: 13mm 14mm; }
 }
+
+/* Section arranger */
+.section-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.section-list li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fcfcfd;
+  font-size: 13px; user-select: none;
+}
+.section-list li[draggable="true"] { cursor: grab; }
+.section-list li.dragging { opacity: 0.4; }
+.section-list li.drop-before { box-shadow: 0 -2px 0 var(--accent); }
+.section-list li.drop-after { box-shadow: 0 2px 0 var(--accent); }
+.section-list li.is-hidden .name { color: var(--muted); text-decoration: line-through; }
+.section-list .grip { color: #a3a9b5; letter-spacing: -2px; width: 12px; }
+.section-list .name { flex: 1; }
+.section-list .move { border: none; background: none; padding: 0 4px; color: var(--muted); font-size: 12px; }
+.section-list .move:hover:not(:disabled) { color: var(--accent); }
+.section-list input { margin: 0; }
+
+/* Memory editor */
+.mem-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.mem-head h3 { margin: 0; }
+button.small { padding: 3px 9px; font-size: 12.5px; }
+button.danger { color: var(--danger); }
+.item-tools { display: flex; align-items: flex-start; gap: 2px; }
+.mem-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.mem-form .field { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.mem-form .field:has(textarea) { grid-column: 1 / -1; }
+.mem-form .field-label { color: var(--muted); }
+.mem-form input, .mem-form select { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: #fff; }
+.mem-form .row { grid-column: 1 / -1; margin-top: 4px; }
+@media (max-width: 600px) { .mem-form { grid-template-columns: 1fr; } }

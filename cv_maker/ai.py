@@ -32,6 +32,13 @@ id (e.g. "exp-acme-2021").
 person's own numbers and specifics; they are what makes a CV strong.
 - When a role ends because a new one starts (e.g. a promotion or new job), set the \
 previous role's end date if it can be inferred.
+- Keep separate roles separate. A different organisation, department or lab is a \
+different item, even if the person held both roles at the same time. Never move \
+highlights from one item to another.
+- Personal, school and hobby projects go in `projects`, not `experience`. Papers, \
+posters and conference talks are achievements of kind "publication" or "talk".
+- Text in square brackets that is an unfilled template gap, such as [month year] or \
+[rating], is not a fact. Don't store it; ask for the real value in `questions`.
 - Put standing instructions about the CV itself (tone, length, spelling, what to \
 emphasise) in `preferences`, and goals such as target roles in `notes`.
 - In `changes`, list what you changed in a few words each.
@@ -60,6 +67,8 @@ otherwise. Leave out weak or irrelevant material rather than padding.
 Skills, and so on), reverse-chronological order, and dates like "Mar 2021 – Present".
 - Summary: two or three sentences on who they are and what they offer, with no \
 clichés.
+- Leave out unfilled template gaps in square brackets, such as [rating]; mention them \
+in `advice` instead.
 - Follow every item in the memory's `preferences`; they override these defaults.
 
 Put the sections in the order that best sells this person. Use `entries` for \
