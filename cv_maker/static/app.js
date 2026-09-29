@@ -8,10 +8,10 @@ let savingEdits = Promise.resolve();
 // ---------- API helpers ----------
 
 async function api(method, url, body) {
-  const opts = { method };
+  const opts = { method, headers: { "X-CV-Maker": "1" } };
   if (body instanceof FormData) opts.body = body;
   else if (body !== undefined) {
-    opts.headers = { "Content-Type": "application/json" };
+    opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(url, opts);

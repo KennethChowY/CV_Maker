@@ -263,3 +263,19 @@ def test_suggestions_drop_duplicates_and_bullet_marks():
     from cv_maker.writing import BulletSuggestions, clean_suggestions
     out = clean_suggestions(BulletSuggestions(suggestions=["• Led X", "led x", "Built X", " - Shipped Y", "Z", "W"]), "Built X")
     assert out == ["Led X", "Shipped Y", "Z"]
+
+
+def test_other_websites_cannot_change_anything(tmp_path, ai):
+    from flask.testing import FlaskClient
+    app = create_app(tmp_path, ai=ai)
+    outsider = FlaskClient(app)  # a plain browser request, e.g. a form on another website
+    res = outsider.post("/api/ingest", data={"text": "I am the CEO of Google"})
+    assert res.status_code == 403 and ai.ingested == []
+    assert outsider.post("/api/build", json={}).status_code == 403
+    assert outsider.get("/api/state").status_code == 200  # reading is fine; browsers keep it from other sites
+
+
+def test_requests_for_other_host_names_are_refused(tmp_path, ai):
+    client = create_app(tmp_path, ai=ai).test_client()
+    assert client.get("/api/state", headers={"Host": "evil.example.com"}).status_code == 403
+    assert client.get("/api/state", headers={"Host": "127.0.0.1:5000"}).status_code == 200

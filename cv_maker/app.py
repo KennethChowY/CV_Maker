@@ -8,6 +8,7 @@ from html import escape
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
+from flask.testing import FlaskClient
 from pydantic import ValidationError
 
 from urllib.parse import quote
@@ -72,6 +73,16 @@ def clean_html(html: str) -> str:
 
 
 _UNSET = object()
+PAGE_HEADER = "X-CV-Maker"  # set by the app's own page; other websites can't add it without being blocked
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+
+
+class _PageClient(FlaskClient):
+    """Test client that behaves like the app's own page."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.environ_base["HTTP_X_CV_MAKER"] = "1"
 
 
 def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | None = None) -> Flask:
@@ -80,6 +91,8 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     app = Flask(__name__, static_folder=None)
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     app.config["VERIFY_KEY"] = check_api_key
+    app.config["ALLOWED_HOSTS"] = set(LOCAL_HOSTS)
+    app.test_client_class = _PageClient
     store = Store(data_dir or os.environ.get("CV_MAKER_DATA", "data"))
     models = ModelManager(store, fixed=ai, pinned=True) if ai is not _UNSET else ModelManager(store, backend=backend)
 
@@ -140,6 +153,20 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         except AIError as e:
             return {"notice": f"Memory saved, but the CV couldn't be rebuilt: {e}"}
         return {}
+
+    @app.before_request
+    def only_this_page():
+        """Refuse requests another website makes to this app from your browser.
+
+        Changes must carry a custom header, which browsers only let the app's own page
+        send, and the Host must be this computer (which also stops DNS-rebinding tricks)."""
+        host = (request.host or "").rsplit(":", 1)[0] if not (request.host or "").startswith("[") \
+            else (request.host or "").split("]")[0] + "]"
+        if host not in app.config["ALLOWED_HOSTS"]:
+            return error("This app only answers on this computer (127.0.0.1).", 403)
+        if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get(PAGE_HEADER) != "1":
+            return error("Request blocked: it didn't come from the CV Maker page.", 403)
+        return None
 
     @app.errorhandler(AIError)
     def handle_ai_error(e: AIError):
@@ -488,6 +515,8 @@ def main() -> None:
     )
     args = parser.parse_args()
     app = create_app(args.data, backend=args.ai)
+    if args.host not in ("127.0.0.1", "localhost", "0.0.0.0", "::"):
+        app.config["ALLOWED_HOSTS"].add(args.host)
     print(f"CV Maker running at http://{args.host}:{args.port}  (memory in {Path(args.data).resolve()})")
     print("Pick or change the AI model in the 'AI model' box on the page.")
     app.run(host=args.host, port=args.port, threaded=True)
