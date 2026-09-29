@@ -100,25 +100,32 @@ It can use either:
 
 ## Setup
 
-Requires Python 3.10+. Install the app's packages into a virtual environment
-(a private folder of packages just for this project):
+Requires Python 3.10+ (get it from https://www.python.org/downloads/).
+
+**Easiest:** double-click **`start.command`** (Mac) or **`start.bat`** (Windows)
+in the project folder. The first time, it sets everything up (about a minute).
+After that it starts the app and opens it in your browser. Keep its window open
+while you use the app; close it to stop. (On a Mac, if it says the file can't
+be opened, right-click it, choose **Open**, then **Open** again.)
+
+**Or from a terminal**, using a virtual environment (a private folder of
+packages just for this project):
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+python -m cv_maker                 # opens http://127.0.0.1:5000 in your browser
 ```
 
 Each time you open a new terminal, run `source .venv/bin/activate` again
-before starting the app. Your prompt shows `(.venv)` when it's active.
+before starting the app. Your prompt shows `(.venv)` when it's active. If port
+5000 is taken (macOS uses it for AirPlay), the app picks the next free one.
 
 ### Option A: free local model (Ollama)
 
 1. Install Ollama from https://ollama.com/download and open it.
-2. Start the app:
-   ```bash
-   python -m cv_maker        # then open http://127.0.0.1:5000
-   ```
+2. Start the app (double-click `start.command` / `start.bat`, or `python -m cv_maker`).
 3. In the **AI model** box at the top left, pick a model. If it isn't
    downloaded yet, click **Download**; the app switches to it when the download
    finishes. Your choice is remembered.
@@ -174,7 +181,8 @@ python -m cv_maker --ai none      # start with no AI: plain layout, edit memory 
 | --- | --- | --- |
 | `--ai` / `CV_MAKER_AI` | `auto` | Starting choice: `auto`, `api`, `ollama` or `none` |
 | `--data` / `CV_MAKER_DATA` | `data/` | Where your memory and CV are stored |
-| `--port` | `5000` | Port to serve on |
+| `--port` | `5000` or the next free one | Port to serve on |
+| `--no-browser` | | Don't open the page automatically |
 | `CV_MAKER_OLLAMA_MODEL` | `qwen3:8b` | Starting local model, before one is picked on the page |
 | `CV_MAKER_OLLAMA_CONTEXT` | `16384` | Local model context size; raise it if you see "ran out of room" |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Where Ollama is running |

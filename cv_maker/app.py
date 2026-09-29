@@ -541,13 +541,29 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     return app
 
 
+def free_port(host: str, start: int) -> int:
+    """The first port from `start` that nothing else is listening on."""
+    import socket
+
+    for port in range(start, start + 20):
+        with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET) as sock:
+            try:
+                sock.bind((host, port))
+                return port
+            except OSError:
+                continue
+    return start
+
+
 def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="Run the CV Maker web app.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=5000)
+    parser.add_argument("--port", type=int, default=None,
+                        help="Port to use (default: 5000, or the next free one; macOS uses 5000 for AirPlay)")
     parser.add_argument("--data", default=os.environ.get("CV_MAKER_DATA", "data"), help="Where memory is stored")
+    parser.add_argument("--no-browser", action="store_true", help="Don't open the page in your browser on start")
     parser.add_argument(
         "--ai", default=os.environ.get("CV_MAKER_AI", "auto"), choices=["auto", "api", "ollama", "none"],
         help="Starting choice until one is picked on the page. "
@@ -557,9 +573,22 @@ def main() -> None:
     app = create_app(args.data, backend=args.ai)
     if args.host not in ("127.0.0.1", "localhost", "0.0.0.0", "::"):
         app.config["ALLOWED_HOSTS"].add(args.host)
-    print(f"CV Maker running at http://{args.host}:{args.port}  (memory in {Path(args.data).resolve()})")
+    if args.port is None:
+        args.port = free_port(args.host, 5000)
+    url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '::') else args.host}:{args.port}"
+    print(f"CV Maker running at {url}  (memory in {Path(args.data).resolve()})")
     print("Pick or change the AI model in the 'AI model' box on the page.")
-    app.run(host=args.host, port=args.port, threaded=True)
+    if not args.no_browser:
+        import threading
+        import webbrowser
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+    try:
+        app.run(host=args.host, port=args.port, threaded=True)
+    except OSError as e:
+        if "in use" in str(e).lower():
+            raise SystemExit(f"Port {args.port} is already in use. CV Maker may already be running: "
+                             f"open {url} in your browser, or start with --port 5001.") from e
+        raise
 
 
 if __name__ == "__main__":
