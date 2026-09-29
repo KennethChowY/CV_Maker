@@ -61,18 +61,33 @@ It can use either:
   page**, which shrinks text and spacing just enough to fit. Dashed lines in the
   preview show where each new page would start.
 - **CV check.** Updates as you edit: page count, unfilled gaps, bullets with no
-  numbers, weak openings like "Responsible for…", overlong bullets, missing
-  contact details, and, if you've pasted a job ad into *Aim the CV*, which of
-  its keywords your CV is missing. Click a quoted bullet to jump to it.
+  numbers, weak openings like "Responsible for…", overlong bullets, mixed UK/US
+  spelling, present tense on past roles, mixed date formats, inconsistent full
+  stops, repeated words, missing contact details, and, if there's a job ad,
+  which of its keywords your CV is missing. Click a quoted bullet to jump to it.
+  Misspellings are underlined in red by your browser as you edit.
+- **Improve one bullet.** Click a bullet on the CV for **Stronger**, **Add a
+  number**, **Shorter**, **Match job ad** or **Ask…** (your own instruction).
+  You get three versions; click one to use it. *Add a number* only uses numbers
+  from your memory and otherwise leaves a gap like `[X%]` for you to fill in.
+- **Applications.** In the **Applications** tab, add a job (company, role, the
+  job ad) to get a CV tailored to it, without changing your general CV. Track
+  each one's status (Draft, Applied, Interview, Offer…), the date applied and
+  notes. Switch between CVs with the menu above the CV. Once an application is
+  past *Draft*, its CV is kept as sent.
+- **Cover letters.** The **Cover letter** tab writes a letter for the open CV
+  from your memory and that job's ad (Professional, Warm or Concise). Edit it on
+  the page; each application keeps its own.
 - **Aim the CV.** Paste a job ad or describe a role and the CV is tailored to it.
 - **Import.** Attach an existing CV (PDF or text) to fill the memory in one go.
 - **Preferences.** Say things like *"always use UK spelling"* or *"keep it to
   one page"*. They're remembered and applied to every rebuild.
-- **PDF.** **Download PDF** opens the print dialog with a print-ready layout;
-  choose *Save as PDF*. The text in the PDF stays selectable, which
-  applicant-tracking systems need. Pick A4 or US Letter in the toolbar. If the
-  PDF shows the date or the page address at the edges, untick **Headers and
-  footers** under *More settings* in the print dialog.
+- **Downloads.** **Download PDF** saves a PDF straight away, made by the Chrome,
+  Edge or Brave browser already on your computer: selectable text (which
+  applicant-tracking systems need), your template, no browser header or footer.
+  If none of those browsers is installed, the print dialog opens instead;
+  choose *Save as PDF*. **Word** downloads a .docx for portals that ask for one.
+  Both work for the CV and the cover letter.
 
 ## Setup
 
@@ -111,7 +126,9 @@ What to expect:
 
 - **Speed.** Local models run much faster on Apple Silicon (M1 or later) or a
   computer with a graphics card. If a model is slow, pick a smaller one; a
-  model too big for your computer's memory gets very slow.
+  model too big for your computer's memory gets very slow. The app keeps the
+  model loaded between updates, and a rebuild only rewrites entries that
+  changed, so most rebuilds after the first are much quicker.
 - **Quality.** Local models write weaker CVs than Claude. So with a local model
   the app lays out the CV itself (newest first, consistent formatting) and the
   model only improves the wording. Check the result, and fix wording directly
@@ -124,14 +141,12 @@ What to expect:
 
 ### Option B: Claude (paid, best quality)
 
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...     # from https://console.anthropic.com
-python -m cv_maker
-```
-
-With the key set, **Claude** becomes available in the AI model box. You can
-switch between Claude and a free local model there at any time; your memory
-and CV carry over.
+Choose **Claude** in the AI model box and paste an API key from
+https://console.anthropic.com/settings/keys. The key is checked with Anthropic,
+then saved only in `data/secrets.json` on your computer (readable only by you),
+and never shown on the page again. **Remove key** deletes it. You can switch
+between Claude and a free local model at any time; your memory and CVs carry
+over. Setting `ANTHROPIC_API_KEY` in the terminal also works.
 
 `--ai` sets the starting choice before anything has been picked on the page:
 
@@ -162,8 +177,11 @@ Everything is stored as plain files in the data directory:
 | `memory.json` | Everything known about you |
 | `history.jsonl` | Log of every update |
 | `snapshots/` | Memory before each change (for undo) |
-| `cv.json`, `cv.html` | The current CV, including manual edits |
-| `settings.json` | Target role, auto-rebuild, and page size |
+| `cv.json`, `cv.html`, `letter.json` | The general CV (including manual edits) and its cover letter |
+| `versions/<id>/` | One folder per job application: its details, tailored CV and cover letter |
+| `settings.json` | Chosen model, design, section order and other settings |
+| `secrets.json` | Your Claude API key, if you added one on the page |
+| `wording_cache.json` | Local model's wording, reused so unchanged entries aren't rewritten |
 
 `data/` is in `.gitignore` so personal details aren't committed by accident.
 Back it up, or point `--data` at a private folder or repository.
@@ -184,11 +202,13 @@ pytest
 | `cv_maker/schema.py` | Memory and CV data models (also the structured-output schemas) |
 | `cv_maker/store.py` | File storage, history, snapshots and undo |
 | `cv_maker/ai.py` | Claude backend and the CV-writing prompt |
+| `cv_maker/writing.py` | Prompts shared by both backends: bullet rewrites and cover letters |
+| `cv_maker/export.py` | PDF (via a local Chrome-based browser) and Word downloads |
 | `cv_maker/ollama.py` | Local-model backend (Ollama) and the change-merging logic |
 | `cv_maker/models.py` | The AI model picker: choosing, downloading and switching models |
 | `cv_maker/render.py`, `templates/cv.html.j2` | CV HTML, plus the no-AI fallback layout |
 | `cv_maker/app.py` | Flask routes |
-| `cv_maker/static/` | Browser UI (`cv.css` is the CV's look, for both screen and print) |
+| `cv_maker/static/` | Browser UI: `app.js` (main), `assist.js` (bullet help, cover letter), `cv.css` (the CV's look on screen and in print) |
 
 To change how the CV looks, edit `cv_maker/static/cv.css`. To change what makes
 a "best" CV, edit `CV_SYSTEM` in `cv_maker/ai.py`.

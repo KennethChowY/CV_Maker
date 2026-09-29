@@ -694,6 +694,73 @@ deliver delivering deliverables stakeholders proven track record demonstrated ex
 written verbal detail oriented self motivated fast paced dynamic passionate problem solving solve solving
 results communicating collaborate collaborating collaboration looking ideal ideally familiarity familiar exposure`.split(/\s+/));
 
+// ---- consistency ----
+
+const IZE_STEMS = "organi|analy|optimi|utili|visuali|priori|speciali|summari|recogni|standardi|characteri|minimi|maximi|customi|categori|digiti|moderni|capitali|emphasi|finali|generali|initiali|mobili|moneti|normali|operationali|parameteri|personali|productioni|synchroni|tokeni|vectori";
+const UK_US_WORDS = [["modelling", "modeling"], ["behaviour", "behavior"], ["colour", "color"], ["centre", "center"],
+  ["favour", "favor"], ["labour", "labor"], ["labelled", "labeled"], ["travelled", "traveled"], ["catalogue", "catalog"],
+  ["programme", "program"], ["licence", "license"], ["defence", "defense"], ["honours", "honors"], ["enrolment", "enrollment"]];
+const PRESENT_START = new Set(("build develop lead manage design create analyse analyze implement maintain conduct engineer write " +
+  "collaborate coordinate support drive deliver perform research train mentor optimise optimize automate use work help assist " +
+  "monitor prepare oversee plan run own ship improve reduce increase launch test deploy migrate teach present").split(" "));
+
+function spellingVariants(text) {
+  const uk = new Set(), us = new Set();
+  const lower = text.toLowerCase();
+  for (const m of lower.matchAll(new RegExp(`\\b(?:${IZE_STEMS})([sz])(?:e|ed|es|er|ers|ing|ation|ations)\\b`, "g"))) {
+    (m[1] === "s" ? uk : us).add(m[0]);
+  }
+  for (const [b, a] of UK_US_WORDS) {
+    if (new RegExp(`\\b${b}`).test(lower)) uk.add(b);
+    if (new RegExp(`\\b${a}(?:s|ed|ing)?\\b`).test(lower) && !new RegExp(`\\b${b}`).test(lower)) us.add(a);
+  }
+  // "program" is fine in British English for software; don't count it
+  us.delete("program");
+  return { uk: [...uk], us: [...us] };
+}
+
+function consistencyChecks(cv, bullets, add) {
+  const text = cv.innerText;
+  const prefs = (state.memory.preferences || []).join(" ").toLowerCase();
+  const wants = /\b(uk|british)\b/.test(prefs) ? "UK" : /\b(us|american)\b/.test(prefs) ? "US" : "";
+  const { uk, us } = spellingVariants(text);
+  if (wants === "UK" && us.length) add("warn", "US spelling found, but your preferences say UK", `Change: ${us.slice(0, 6).join(", ")}`);
+  else if (wants === "US" && uk.length) add("warn", "UK spelling found, but your preferences say US", `Change: ${uk.slice(0, 6).join(", ")}`);
+  else if (uk.length && us.length) {
+    add("warn", "Mixed UK and US spelling",
+        `UK: ${uk.slice(0, 4).join(", ")}. US: ${us.slice(0, 4).join(", ")}. Pick one; tell the app e.g. "use UK spelling".`);
+  }
+
+  const pastTense = [];
+  for (const entry of cv.querySelectorAll("section:not([hidden]) .cv-entry")) {
+    const dates = entry.querySelector(".cv-entry-dates")?.textContent || "";
+    if (!dates.trim() || /present|now|current/i.test(dates)) continue;
+    for (const li of entry.querySelectorAll("li")) {
+      const first = (li.textContent.trim().split(/\s+/)[0] || "").toLowerCase().replace(/[^a-z]/g, "");
+      if (PRESENT_START.has(first) || (first.endsWith("ing") && first.length > 5)) pastTense.push(li);
+    }
+  }
+  if (pastTense.length) add("warn", `${pastTense.length} bullet${pastTense.length > 1 ? "s" : ""} on past roles in the present tense`,
+                            "For roles you've finished, use the past tense: Built, Led, Designed.", pastTense.slice(0, 5));
+
+  const formats = new Set();
+  cv.querySelectorAll(".cv-entry-dates").forEach((d) => {
+    const t = d.textContent;
+    if (/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(t)) formats.add("month names (Mar 2024)");
+    if (/\b\d{1,2}[/.-](19|20)\d{2}\b|\b(19|20)\d{2}[/.-]\d{1,2}\b/.test(t)) formats.add("numbers (03/2024)");
+  });
+  if (formats.size > 1) add("info", "Dates are written in different ways", `Found ${[...formats].join(" and ")}. Use one style throughout.`);
+
+  const withStop = bullets.filter((li) => /\.\s*$/.test(li.textContent));
+  if (withStop.length && withStop.length < bullets.length) {
+    const odd = withStop.length <= bullets.length / 2 ? withStop : bullets.filter((li) => !withStop.includes(li));
+    add("info", "Some bullets end with a full stop and some don't", "Pick one style for all bullets.", odd.slice(0, 5));
+  }
+
+  const repeated = text.match(/\b([a-z]{2,})\s+\1\b/gi);  // words only: "0000 0000" in a phone number is fine
+  if (repeated) add("warn", "Repeated word", `Found: ${[...new Set(repeated)].slice(0, 3).join(", ")}`);
+}
+
 function jobKeywords(text) {
   const scores = new Map();
   const display = new Map();
@@ -758,6 +825,8 @@ function runChecks() {
   const long = bullets.filter((li) => li.textContent.trim().length > 220);
   if (long.length) add("info", `${long.length} bullet${long.length > 1 ? "s are" : " is"} very long`,
                        "Keep bullets to one or two lines so they're easy to skim.", long.slice(0, 5));
+
+  consistencyChecks(cv, bullets, add);
 
   const p = state.memory.profile;
   const missing = [!p.email && "email", !p.phone && "phone", !p.links.length && "a LinkedIn or GitHub link"].filter(Boolean);
