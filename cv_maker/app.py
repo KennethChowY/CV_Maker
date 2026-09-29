@@ -33,7 +33,11 @@ from .models import (
     default_choice,
 )
 from .assistant import ACADEMIC_GUIDANCE, LANGUAGES, REGIONS, basic_questions
+from .backup import auto_backup, backup_zip, check_folder
+from .backup import status as backup_status
 from .jobads import fetch_job_ad
+from .scholar import find_authors, profile_text, research_profile
+from .usage import UsageLog
 from .render import basic_cv, render_cv, render_letter, section_list, tidy_cv, with_photo
 from .schema import Memory
 from .store import GENERAL, KINDS, STATUSES, Store
@@ -103,6 +107,8 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     app.config["VERIFY_KEY"] = check_api_key
     app.config["ALLOWED_HOSTS"] = set(LOCAL_HOSTS)
+    app.config["FIND_AUTHORS"] = find_authors
+    app.config["RESEARCH_PROFILE"] = research_profile
     app.test_client_class = _PageClient
     store = Store(data_dir or os.environ.get("CV_MAKER_DATA", "data"))
     models = ModelManager(store, fixed=ai, pinned=True) if ai is not _UNSET else ModelManager(store, backend=backend)
@@ -195,6 +201,8 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
             "has_photo": store.photo_path() is not None,
             "prep": store.load_doc("prep", vid) if vid != GENERAL else {},
             "linkedin": store.load_doc("linkedin"),
+            "usage": UsageLog(store.dir / "usage.jsonl").summary(),
+            "backup": backup_status(store.load_settings()["backup_dir"]),
             "ai_status": ai_status(ai),
         }
         payload.update(extra)
@@ -232,6 +240,16 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get(PAGE_HEADER) != "1":
             return error("Request blocked: it didn't come from the CV Maker page.", 403)
         return None
+
+    @app.after_request
+    def backup_after_changes(response):
+        """Keep an automatic backup (at most hourly) once something has changed."""
+        if request.method not in ("GET", "HEAD", "OPTIONS") and response.status_code < 400:
+            try:
+                auto_backup(store.dir, store.load_settings()["backup_dir"])
+            except (OSError, ValueError):
+                pass  # e.g. iCloud Drive unavailable; the next change tries again
+        return response
 
     @app.errorhandler(AIError)
     def handle_ai_error(e: AIError):
@@ -340,17 +358,9 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     @app.get("/api/export/backup.zip")
     def export_backup():
         """Everything in the data folder except the API key, as one zip file."""
-        import io
-        import zipfile
         from datetime import date
 
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
-            for path in sorted(store.dir.rglob("*")):
-                rel = path.relative_to(store.dir)
-                if path.is_file() and path.name not in ("secrets.json",) and not path.name.endswith(".tmp"):
-                    z.write(path, f"data/{rel.as_posix()}")
-        return Response(buffer.getvalue(), mimetype="application/zip",
+        return Response(backup_zip(store.dir), mimetype="application/zip",
                         headers={"Content-Disposition": attachment(f"CV Maker backup {date.today().isoformat()}.zip")})
 
     @app.post("/api/cv/layout")
@@ -422,14 +432,21 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
             body["fit_one_page"] = bool(body["fit_one_page"])
         if body.get("region", "") not in REGIONS or body.get("language", "en") not in LANGUAGES:
             return error("Unknown country or language.")
-        if "backup_dir" in body:
-            body["backup_dir"] = str(body["backup_dir"]).strip()
+        if "backup_dir" in body and str(body["backup_dir"]).strip():
+            try:
+                body["backup_dir"] = str(check_folder(str(body["backup_dir"]).strip()))
+            except ValueError as e:
+                return error(str(e))
+        elif "backup_dir" in body:
+            body["backup_dir"] = ""
         photo_changed = "show_photo" in body and bool(body["show_photo"]) != store.load_settings()["show_photo"]
         if "show_photo" in body:
             body["show_photo"] = bool(body["show_photo"])
         store.save_settings(body)
         if photo_changed or "region" in body:
             refresh_photos()
+        if body.get("backup_dir"):
+            auto_backup(store.dir, body["backup_dir"], force=True)  # the first one straight away
         return state()
 
     # ---- AI writing help ------------------------------------------------
@@ -633,14 +650,55 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         email = ai.follow_up_email(store.load_memory(), info["company"], info["role"], max(days, 1), info["notes"])
         return jsonify({"subject": email.subject, "body": email.body})
 
+    @app.post("/api/backup/now")
+    def backup_now():
+        folder = store.load_settings()["backup_dir"]
+        if not folder:
+            return error("Choose a folder for automatic backups first.")
+        try:
+            auto_backup(store.dir, folder, force=True)
+        except (OSError, ValueError) as e:
+            return error(f"Couldn't back up: {e}")
+        return state()
+
+    # ---- professors: find their research, then draft a first email ----
+
+    @app.post("/api/professor/search")
+    def professor_search():
+        body = request.get_json(silent=True) or {}
+        people = app.config["FIND_AUTHORS"](str(body.get("name", "")), str(body.get("institution", "")))
+        return jsonify({"people": people})
+
+    @app.get("/api/versions/<vid>/professor")
+    def get_professor(vid: str):
+        if vid == GENERAL or not store.has_version(vid):
+            return error("That application no longer exists.", 404)
+        return jsonify({"professor": store.load_doc("professor", vid)})
+
+    @app.post("/api/versions/<vid>/professor")
+    def choose_professor(vid: str):
+        """Save the chosen professor's research with this application."""
+        if vid == GENERAL or not store.has_version(vid):
+            return error("That application no longer exists.", 404)
+        profile = app.config["RESEARCH_PROFILE"](str((request.get_json(silent=True) or {}).get("id", "")))
+        store.save_doc("professor", {**profile, "found_at": _now_iso()}, vid)
+        if profile.get("name") and not store.version_info(vid)["supervisor"]:
+            store.update_version(vid, {"supervisor": profile["name"]})
+        return jsonify({"professor": profile})
+
     @app.post("/api/versions/<vid>/supervisor-email")
     def supervisor_email(vid: str):
-        """For a PhD application: a first email to a potential supervisor."""
+        """For a PhD application: a first email to a potential supervisor, using their papers if found."""
         if vid == GENERAL or not store.has_version(vid):
             return error("That application no longer exists.", 404)
         ai = need_ai()
         info = store.version_info(vid)
-        email = ai.supervisor_email(store.load_memory(), info["target"], info["company"], info["role"], info["supervisor"])
+        professor = store.load_doc("professor", vid)
+        about = info["target"]
+        if professor.get("name"):
+            about = f"{about}\n\n<their_research source=\"OpenAlex\">\n{profile_text(professor)}\n</their_research>".strip()
+        email = ai.supervisor_email(store.load_memory(), about, info["company"], info["role"],
+                                    info["supervisor"] or professor.get("name", ""))
         return jsonify({"subject": email.subject, "body": email.body})
 
     @app.post("/api/job-ad")

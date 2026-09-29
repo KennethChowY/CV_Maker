@@ -117,6 +117,8 @@ class OpenAICompatibleAI(ChatBackend):
                     self._json_schema_ok = False
                     continue
                 raise
+            usage = res.get("usage") or {}
+            self._record(output, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
             choice = (res.get("choices") or [{}])[0]
             if choice.get("finish_reason") == "length":
                 raise AIError("The model's answer was cut off. Try again, or pick another model.")

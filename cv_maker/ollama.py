@@ -35,6 +35,7 @@ KEEP_LOADED = "30m"    # keep the model in memory between updates so it doesn't 
 
 class OllamaAI(ChatBackend):
     local = True
+    provider = "ollama"
 
     def __init__(self, model: str = DEFAULT_MODEL, host: str | None = None, num_ctx: int = DEFAULT_CONTEXT,
                  cache_path: str | Path | None = None):
@@ -96,6 +97,7 @@ class OllamaAI(ChatBackend):
                     body.pop("think")  # model has no thinking switch
                     continue
                 raise
+            self._record(output, res.get("prompt_eval_count", 0), res.get("eval_count", 0))
             if res.get("done_reason") == "length":
                 raise AIError(
                     "The local model ran out of room. Set CV_MAKER_OLLAMA_CONTEXT higher (e.g. 32768)."

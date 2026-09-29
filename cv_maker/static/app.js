@@ -56,6 +56,9 @@ function render(next) {
   if (document.activeElement !== $("target")) $("target").value = state.target || "";
   $("aim-title").textContent = state.active.id === "general" ? "Aim the CV"
     : state.active.kind === "phd" ? `Programme and research for ${state.active.name}` : `Job ad for ${state.active.name}`;
+  $("aim-title").nextElementSibling.textContent = state.active.kind === "phd"
+    ? "Paste the programme page, the lab's research or the professor's recent work, and the academic CV speaks to it."
+    : "Optional. Paste a job ad or describe the role you're after, and the CV is tailored to it.";
   $("auto").checked = !!settings.auto_rebuild;
   $("page-size-select").value = settings.page_size;
   applyPageSize(settings.page_size);
@@ -1068,10 +1071,9 @@ function renderApplications() {
     const phd = v.kind === "phd";
     actions.append(button("Open CV", "small primary", () => openVersion(v.id)),
                    button(phd ? "Statement" : "Cover letter", "small", () => openVersion(v.id, "letter")));
-    if (phd && typeof draftSupervisorEmail === "function") {
-      const email = button("Email a supervisor", "small", () => draftSupervisorEmail(v), "Draft a first email to a potential supervisor");
-      email.disabled = !state.ai_enabled;
-      actions.append(email);
+    if (phd && typeof professorDialog === "function") {
+      actions.append(button("Email a professor", "small", () => professorDialog(v),
+                            "Find the professor's research and draft a first email"));
     }
     actions.append(button("Delete", "small danger", () => deleteApplication(v)));
 

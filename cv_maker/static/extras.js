@@ -9,11 +9,15 @@ function openModal(title, body, actions) {
   const dialog = $("modal");
   $("modal-title").textContent = title;
   $("modal-body").replaceChildren(...[].concat(body));
-  $("modal-actions").replaceChildren(...actions.map((a) => button(a.label, a.primary ? "primary" : "", async (e) => {
-    if (a.onClick && (await a.onClick(e)) === false) return;  // returning false keeps it open
-    if (dialog.open) dialog.close();
-  }, a.title)));
-  dialog.showModal();
+  $("modal-actions").replaceChildren(...actions.map((a) => {
+    const b = button(a.label, a.primary ? "primary" : "", async (e) => {
+      if (a.onClick && (await a.onClick(e)) === false) return;  // returning false keeps it open
+      if (dialog.open) dialog.close();
+    }, a.title);
+    b.disabled = !!a.disabled;
+    return b;
+  }));
+  if (!dialog.open) dialog.showModal();
 }
 
 async function copyText(text, btn) {
@@ -357,6 +361,194 @@ function emailDialog(title, email, tipText, finalAction) {
   ]);
 }
 
+// ---------- Email a professor (PhD) ----------
+
+function paperList(title, works) {
+  const box = el("div", "papers");
+  box.append(el("h3", "", title));
+  const ul = el("ul");
+  works.forEach((w) => {
+    const li = el("li");
+    li.append(el("span", "paper-title", w.title), el("span", "hint", ` · ${[w.year, w.venue].filter(Boolean).join(", ")}`));
+    ul.append(li);
+  });
+  box.append(ul);
+  return box;
+}
+
+function showProfessor(v, prof) {
+  const body = [];
+  const head = el("div", "prof-head");
+  head.append(el("strong", "", prof.name), el("span", "hint", ` · ${prof.institutions.join(", ")}`));
+  body.push(head);
+  if (prof.topics.length) {
+    const chips = el("div", "chips");
+    prof.topics.forEach((t) => chips.append(el("span", "chip", t)));
+    body.push(chips);
+  }
+  if (prof.recent.length) body.push(paperList("Recent papers", prof.recent.slice(0, 6)));
+  if (prof.cited.length) body.push(paperList("Most cited", prof.cited.slice(0, 3)));
+  const src = el("p", "hint");
+  const a = el("a", "", "OpenAlex");
+  a.href = prof.source;
+  a.target = "_blank";
+  a.rel = "noopener";
+  src.append("From ", a, ", an open index of academic papers. The email will mention one of these papers and connect it to your own work.");
+  body.push(src);
+  if (!state.ai_enabled) body.push(el("p", "hint warn", "Choose an AI model in the top-left box to draft the email."));
+  openModal(`Email a professor: ${v.name}`, body, [
+    { label: "Search again", onClick: () => { professorSearch(v, prof.name); return false; } },
+    { label: "Draft the email", primary: true, disabled: !state.ai_enabled,
+      onClick: () => { $("modal").close(); draftSupervisorEmail(v); return false; } },
+  ]);
+}
+
+// Step 1: who. `v` is the PhD application, or null to start a new one.
+function professorSearch(v, name = "", institution = "") {
+  const nameIn = el("input");
+  nameIn.value = name || v?.supervisor || "";
+  nameIn.placeholder = "e.g. Jane Wong";
+  const instIn = el("input");
+  instIn.value = institution || v?.company || "";
+  instIn.placeholder = "e.g. CUHK or The Chinese University of Hong Kong";
+  const field = (label, input) => { const l = el("label", "field"); l.append(el("span", "field-label", label), input); return l; };
+  const results = el("div", "people");
+  const search = async () => {
+    if (!nameIn.value.trim()) { nameIn.focus(); return false; }
+    results.replaceChildren(thinkingRow("Looking them up…"));
+    try {
+      const { people } = await api("POST", "/api/professor/search", { name: nameIn.value, institution: instIn.value });
+      if (!people.length) {
+        results.replaceChildren(el("p", "hint", "Nobody by that name was found. Check the spelling, or paste their lab page link into the application's 'Programme and research' box and draft the email from that."));
+        return false;
+      }
+      results.replaceChildren(el("p", "hint", "Which one is it?"), ...people.map((p) => {
+        const b = button("", "person", () => pickProfessor(v, p, instIn.value));
+        b.append(el("strong", "", p.name), el("span", "hint", ` · ${p.institutions.join(", ") || "institution unknown"}`),
+                 el("div", "hint", `${p.works} papers${p.topics.length ? ` · ${p.topics.slice(0, 3).join(", ")}` : ""}`));
+        return b;
+      }));
+    } catch (err) {
+      results.replaceChildren(el("p", "hint warn", err.message));
+    }
+    return false;
+  };
+  [nameIn, instIn].forEach((i) => i.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); search(); } }));
+  const intro = el("p", "hint", "Type the professor's name. The app finds their papers, so your email can mention their actual research.");
+  openModal(v ? `Email a professor: ${v.name}` : "Email a professor", [intro, field("Professor's name", nameIn),
+    field("University", instIn), results], [{ label: "Cancel" }, { label: "Find their research", primary: true, onClick: search }]);
+  nameIn.focus();
+}
+
+async function pickProfessor(v, person, institution) {
+  $("modal").close();
+  await withBusy(v ? "Reading their papers…" : busyText("Setting up a PhD application and your academic CV…"), async () => {
+    if (!v) {  // start tracking this as a PhD application, with an academic CV to attach
+      const next = await api("POST", "/api/versions", {
+        company: institution.trim() || person.institutions[0] || "", role: "PhD", kind: "phd", supervisor: person.name,
+        region: state.settings.region || "",
+      });
+      render(next);
+      v = state.versions.find((x) => x.id === next.active.id);
+    }
+    const { professor } = await api("POST", `/api/versions/${v.id}/professor`, { id: person.id });
+    render(await api("GET", "/api/state"));
+    showProfessor(state.versions.find((x) => x.id === v.id) || v, professor);
+  });
+}
+
+async function professorDialog(v) {
+  if (v) {
+    try {
+      const { professor } = await api("GET", `/api/versions/${v.id}/professor`);
+      if (professor && professor.name) { showProfessor(v, professor); return; }
+    } catch { /* search instead */ }
+  }
+  professorSearch(v);
+}
+
+// ---------- Automatic backups ----------
+
+function backupDialog() {
+  const b = state.backup;
+  const folder = el("input");
+  folder.value = b.folder || b.suggested;
+  const field = el("label", "field");
+  field.append(el("span", "field-label", "Folder"), folder);
+  const status = el("p", "hint", b.folder
+    ? (b.last ? `On. Last backup ${new Date(b.last).toLocaleString()} · ${b.count} kept.` : "On. No backup yet.")
+    : "Off.");
+  const intro = el("p", "hint", "While this is on, the app saves a zip of your memory, CVs and letters to this folder, at most once an hour after you change something, and keeps the latest 30. Your API key is never included. A folder in iCloud Drive keeps them safe even if something happens to this computer.");
+  const suggest = b.suggested.includes("CloudDocs") ? el("p", "hint", "Suggested: your iCloud Drive.") : el("span");
+  const actions = [];
+  if (b.folder) {
+    actions.push({ label: "Turn off", onClick: () => saveSettings({ backup_dir: "" }) });
+    actions.push({ label: "Back up now", onClick: async () => {
+      await withBusy("Backing up…", async () => render(await api("POST", "/api/backup/now")));
+      backupDialog();
+      return false;
+    } });
+  }
+  actions.push({ label: b.folder ? "Save" : "Turn on", primary: true, onClick: async () => {
+    try {
+      render(await api("POST", "/api/settings", { backup_dir: folder.value }));
+      showNotice(`Automatic backups are on. They go to ${state.backup.folder}.`);
+    } catch (err) {
+      status.textContent = err.message;
+      status.classList.add("warn");
+      return false;
+    }
+  } });
+  openModal("Automatic backups", [intro, field, suggest, status], actions);
+}
+
+// ---------- Spending ----------
+
+function money(n) {
+  return n < 0.01 && n > 0 ? "under $0.01" : `$${n.toFixed(2)}`;
+}
+
+function tokens(n) {
+  return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
+}
+
+function renderUsage() {
+  const line = $("usage-line");
+  const u = state.usage;
+  const m = u.month;
+  const local = state.ai_status.local;
+  if (!m.requests && !u.all.requests) { line.hidden = true; return; }
+  line.hidden = false;
+  const paid = m.requests - m.local;
+  if (local && !paid) line.textContent = `Free: ${m.requests} requests this month ran on this computer`;
+  else if (m.unpriced && !m.cost) line.textContent = `This month: ${paid} requests, ${tokens(m.input_tokens + m.output_tokens)} tokens`;
+  else line.textContent = `This month: about ${money(m.cost)} · ${paid} requests`;
+}
+
+function usageDialog() {
+  const u = state.usage;
+  const table = (title, t) => {
+    const box = el("div", "usage-table");
+    box.append(el("h3", "", title));
+    const rows = el("table");
+    const head = el("tr");
+    ["What", "Requests", "Tokens", "Cost"].forEach((h) => head.append(el("th", "", h)));
+    rows.append(head);
+    t.by_purpose.forEach((r) => {
+      const tr = el("tr");
+      [r.purpose, r.requests, tokens(r.tokens), r.cost ? money(r.cost) : "–"].forEach((c) => tr.append(el("td", "", String(c))));
+      rows.append(tr);
+    });
+    const total = el("tr", "total");
+    ["Total", t.requests, tokens(t.input_tokens + t.output_tokens), money(t.cost)].forEach((c) => total.append(el("td", "", String(c))));
+    rows.append(total);
+    box.append(rows);
+    return box;
+  };
+  const notes = el("p", "hint", "Costs are estimates from the list prices of Anthropic's models. Requests to other services show tokens only; check that service's billing page for the exact cost. Free local models cost nothing.");
+  openModal("AI usage", [table("This month", u.month), table("All time", u.all), notes], [{ label: "Close", primary: true }]);
+}
+
 // ---------- Country, language and photo ----------
 
 function fillSelect(select, entries) {
@@ -474,11 +666,15 @@ function renderExtras() {
 
   renderPrep();
   renderLinkedIn();
+  renderUsage();
 }
 
 // ---------- Wiring ----------
 
 $("truth-run").addEventListener("click", runTruthCheck);
+$("email-professor").addEventListener("click", () => professorSearch(null));
+$("auto-backup").addEventListener("click", backupDialog);
+$("usage-line").addEventListener("click", usageDialog);
 $("strengthen").addEventListener("click", strengthen);
 $("prep-write").addEventListener("click", writePrep);
 $("linkedin-write").addEventListener("click", writeLinkedIn);

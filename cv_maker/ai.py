@@ -40,6 +40,7 @@ EFFORT = {MemoryUpdate: "medium", CVWording: "high", BulletSuggestions: "low", C
 
 class ClaudeAI(ChatBackend):
     local = False
+    provider = "anthropic"
 
     def __init__(self, client: anthropic.Anthropic | None = None, model: str = MODEL,
                  cache_path: str | Path | None = None):
@@ -76,6 +77,8 @@ class ClaudeAI(ChatBackend):
         except anthropic.APIStatusError as e:
             raise AIError(f"Anthropic API error ({e.status_code}): {e.message}") from e
 
+        usage = getattr(response, "usage", None)
+        self._record(output_format, getattr(usage, "input_tokens", 0), getattr(usage, "output_tokens", 0))
         if response.stop_reason == "refusal":
             raise AIError("The model declined this request.")
         if response.stop_reason == "max_tokens":

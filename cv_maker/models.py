@@ -14,6 +14,7 @@ from .api_models import OpenAICompatibleAI
 from .ollama import DEFAULT_MODEL, OllamaAI, is_installed
 from .providers import PROVIDERS, default_model, detect_provider
 from .store import Store
+from .usage import UsageLog
 
 # Shown in the model picker even before they're downloaded. Sizes are approximate.
 RECOMMENDED = [
@@ -85,18 +86,22 @@ def default_choice(backend: str | None = None, store: Store | None = None) -> di
 
 def build_ai(choice: dict, api: dict | None = None, cache_dir: Path | None = None):
     cache = cache_dir / "wording_cache.json" if cache_dir else None
+    ai = None
     if choice["backend"] in ("api", "claude"):
         if not api:
             return None
         provider = api.get("provider") or "anthropic"
         if PROVIDERS.get(provider, {}).get("kind") == "anthropic":
             client = anthropic.Anthropic(api_key=api["key"]) if api.get("key") else None
-            return ClaudeAI(client, model=choice["model"] or ANTHROPIC_DEFAULT_MODEL, cache_path=cache)
-        return OpenAICompatibleAI(api.get("base_url") or PROVIDERS[provider]["base_url"], api["key"],
-                                  model=choice["model"], provider=provider, cache_path=cache)
-    if choice["backend"] == "ollama":
-        return OllamaAI(model=choice["model"] or DEFAULT_MODEL, cache_path=cache)
-    return None
+            ai = ClaudeAI(client, model=choice["model"] or ANTHROPIC_DEFAULT_MODEL, cache_path=cache)
+        else:
+            ai = OpenAICompatibleAI(api.get("base_url") or PROVIDERS[provider]["base_url"], api["key"],
+                                    model=choice["model"], provider=provider, cache_path=cache)
+    elif choice["backend"] == "ollama":
+        ai = OllamaAI(model=choice["model"] or DEFAULT_MODEL, cache_path=cache)
+    if ai is not None and cache_dir:
+        ai.usage = UsageLog(cache_dir / "usage.jsonl")
+    return ai
 
 
 class ModelManager:

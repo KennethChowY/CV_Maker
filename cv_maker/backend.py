@@ -242,6 +242,15 @@ class ChatBackend:
     model: str = ""
     cache_path: Path | None = None
     local = False
+    usage = None  # a UsageLog, set by the app, to keep track of tokens and cost
+    provider = ""
+
+    def _record(self, output: type[BaseModel], input_tokens, output_tokens) -> None:
+        if self.usage is not None:
+            try:
+                self.usage.record(self.provider, self.model, output.__name__, input_tokens or 0, output_tokens or 0)
+            except OSError:
+                pass  # never fail a request because the log couldn't be written
 
     def _chat(self, system: str, user: str, output: type[BaseModel]):
         raise NotImplementedError

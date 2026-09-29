@@ -212,8 +212,10 @@ words. Busy academics skim, so:
 - `subject`: specific, e.g. "Prospective PhD student: exposome data science (UCLA Data Theory graduate)".
 - Open with who they are in one sentence (degree, university, current research role).
 - One or two sentences connecting their experience to the supervisor's research. Use only what the
-  given description of the supervisor's work says; if nothing is given, write a gap in square
-  brackets like [one specific paper or project of theirs] for the person to fill in.
+  given description of the supervisor's work says. If their papers are listed, name ONE specific,
+  recent paper by its title and say briefly what about it connects to the student's own work;
+  don't claim to have read more than the title and abstract show. If nothing is given, write a
+  gap in square brackets like [one specific paper or project of theirs] for the person to fill in.
 - Their one or two most relevant research experiences, with a concrete detail or number.
 - Ask whether the supervisor is taking new PhD students for the coming year, and mention the
   attached CV. Sign off with their name. No flattery, no cliches.
