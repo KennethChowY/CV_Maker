@@ -2,7 +2,9 @@ import io
 
 import pytest
 
-from cv_maker.app import clean_html, create_app
+from cv_maker.ai import AIError, ClaudeAI
+from cv_maker.app import clean_html, create_app, select_ai
+from cv_maker.ollama import OllamaAI
 from cv_maker.schema import CVDocument, CVEntry, CVSection, Experience, IngestResult, Memory
 from cv_maker.store import Store, ensure_ids
 
@@ -127,16 +129,37 @@ def test_manual_memory_edit_is_validated(client):
     assert body["memory"]["profile"]["name"] == "Grace"
 
 
-def test_without_ai_builds_plain_cv_and_refuses_ingest(tmp_path, monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path))
-    client = create_app(tmp_path / "data").test_client()
-    assert client.get("/api/state").get_json()["ai_enabled"] is False
+def test_without_ai_builds_plain_cv_and_refuses_ingest(tmp_path):
+    client = create_app(tmp_path / "data", ai=None).test_client()
+    state = client.get("/api/state").get_json()
+    assert state["ai_enabled"] is False
+    assert state["ai_status"]["ready"] is False
     assert client.post("/api/ingest", data={"text": "hi"}).status_code == 400
     client.put("/api/memory", json={"profile": {"name": "Grace"}, "skills": [{"category": "Languages", "skills": ["COBOL"]}]})
     html = client.get("/api/state").get_json()["cv_html"]
     assert "Grace" in html and "COBOL" in html
+
+
+def test_auto_backend_uses_free_local_model_without_api_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert isinstance(select_ai("auto"), OllamaAI)
+    assert select_ai("none") is None
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    assert isinstance(select_ai("auto"), ClaudeAI)
+    assert isinstance(select_ai("ollama"), OllamaAI)
+
+
+def test_failed_auto_rebuild_still_saves_memory(tmp_path, ai):
+    def broken(*args, **kwargs):
+        raise AIError("Can't reach Ollama.")
+
+    ai.build_cv = broken
+    client = create_app(tmp_path, ai=ai).test_client()
+    body = client.post("/api/ingest", data={"text": "Engineer"}).get_json()
+    assert body["memory"]["experience"][0]["role"] == "Engineer"
+    assert "couldn't be rebuilt" in body["notice"]
 
 
 def test_standalone_cv_page_escapes_name(client, ai):

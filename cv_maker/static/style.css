@@ -61,7 +61,7 @@ textarea:focus, button:focus-visible, select:focus-visible { outline: 2px solid 
 .tabs { display: flex; gap: 4px; }
 .tab { border: none; background: none; padding: 7px 12px; color: var(--muted); }
 .tab.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.ai-status { margin-left: auto; font-size: 12px; color: var(--muted); }
+.ai-status { margin-left: auto; font-size: 12px; color: var(--muted); text-align: right; }
 .ai-status.off { color: var(--warn-ink); }
 
 .layout { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 20px; align-items: start; }

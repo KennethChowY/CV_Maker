@@ -102,9 +102,14 @@ def _attachment_blocks(attachments: list[Attachment]) -> list[dict]:
 
 
 class ClaudeAI:
+    local = False
+
     def __init__(self, client: anthropic.Anthropic | None = None, model: str = MODEL):
         self.client = client or anthropic.Anthropic()
         self.model = model
+
+    def status(self) -> dict:
+        return {"label": "Claude (paid API)", "ready": True, "message": "", "local": False}
 
     def _parse(self, *, system: str, content: list[dict], output_format, effort: str):
         try:

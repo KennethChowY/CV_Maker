@@ -11,12 +11,17 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from pydantic import ValidationError
 
 from .ai import AIError, Attachment, ClaudeAI
+from .ollama import OllamaAI
 from .render import basic_cv, render_cv
 from .schema import Memory
 from .store import Store
 
 STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+NO_AI = (
+    "No AI is set up. Install Ollama for a free local model, or set ANTHROPIC_API_KEY "
+    "to use Claude (see the README). You can still edit the memory directly."
+)
 EDIT_CONFLICT = (
     "Your CV has manual edits, so it wasn't rebuilt automatically. Use "
     "'Save edits to memory' to keep them, or 'Rebuild CV' to replace them."
@@ -30,6 +35,25 @@ def credentials_configured() -> bool:
     return (Path.home() / ".config" / "anthropic").exists()
 
 
+def select_ai(backend: str | None = None):
+    """Pick the AI backend: 'claude', 'ollama', 'none', or 'auto' (Claude if a key is set, else Ollama)."""
+    backend = (backend or os.environ.get("CV_MAKER_AI") or "auto").lower()
+    if backend == "none":
+        return None
+    if backend == "claude" or (backend == "auto" and credentials_configured()):
+        return ClaudeAI()
+    if backend in ("ollama", "local", "auto"):
+        return OllamaAI()
+    raise ValueError(f"Unknown AI backend '{backend}'. Use auto, claude, ollama or none.")
+
+
+def ai_status(ai) -> dict:
+    if ai is None:
+        return {"label": "No AI configured", "ready": False, "message": NO_AI, "local": False}
+    status = getattr(ai, "status", None)
+    return status() if status else {"label": "AI", "ready": True, "message": "", "local": False}
+
+
 def clean_html(html: str) -> str:
     """Strip anything executable from CV HTML edited in the browser."""
     html = re.sub(r"<(script|style|iframe|object|embed)\b.*?</\1\s*>", "", html, flags=re.I | re.S)
@@ -39,12 +63,17 @@ def clean_html(html: str) -> str:
     return html
 
 
-def create_app(data_dir: str | Path | None = None, ai=None) -> Flask:
+_UNSET = object()
+
+
+def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | None = None) -> Flask:
+    """Create the app. Pass `ai` to use a specific backend object (None for no AI),
+    or leave it out to choose one from `backend` / the CV_MAKER_AI setting."""
     app = Flask(__name__, static_folder=None)
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     store = Store(data_dir or os.environ.get("CV_MAKER_DATA", "data"))
-    if ai is None and credentials_configured():
-        ai = ClaudeAI()
+    if ai is _UNSET:
+        ai = select_ai(backend)
 
     def build(target: str) -> list[str]:
         memory = store.load_memory()
@@ -63,6 +92,7 @@ def create_app(data_dir: str | Path | None = None, ai=None) -> Flask:
             "cv_meta": store.cv_meta(),
             "advice": cv.advice if cv else [],
             "ai_enabled": ai is not None,
+            "ai_status": ai_status(ai),
         }
         payload.update(extra)
         return jsonify(payload)
@@ -76,7 +106,11 @@ def create_app(data_dir: str | Path | None = None, ai=None) -> Flask:
             return {}
         if store.cv_meta().get("edited"):
             return {"notice": EDIT_CONFLICT}
-        return {"advice_updated": build(settings["target"])}
+        try:
+            build(settings["target"])
+        except AIError as e:
+            return {"notice": f"Memory saved, but the CV couldn't be rebuilt: {e}"}
+        return {}
 
     @app.errorhandler(AIError)
     def handle_ai_error(e: AIError):
@@ -97,7 +131,7 @@ def create_app(data_dir: str | Path | None = None, ai=None) -> Flask:
     @app.post("/api/ingest")
     def ingest():
         if not ai:
-            return error("Claude isn't configured. Set ANTHROPIC_API_KEY, or edit the memory directly.")
+            return error(NO_AI)
         text = (request.form.get("text") or "").strip()
         attachments = [
             Attachment(f.filename or "upload", f.mimetype or "text/plain", f.read())
@@ -137,7 +171,7 @@ def create_app(data_dir: str | Path | None = None, ai=None) -> Flask:
     @app.post("/api/cv/learn")
     def learn_from_cv():
         if not ai:
-            return error("Claude isn't configured. Set ANTHROPIC_API_KEY first.")
+            return error(NO_AI)
         text = ((request.get_json(silent=True) or {}).get("text") or "").strip()
         if not text:
             return error("The CV is empty.")
@@ -195,11 +229,16 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--data", default=os.environ.get("CV_MAKER_DATA", "data"), help="Where memory is stored")
+    parser.add_argument(
+        "--ai", default=os.environ.get("CV_MAKER_AI", "auto"), choices=["auto", "claude", "ollama", "none"],
+        help="auto = Claude if ANTHROPIC_API_KEY is set, otherwise a free local model via Ollama",
+    )
     args = parser.parse_args()
-    app = create_app(args.data)
+    ai = select_ai(args.ai)
+    app = create_app(args.data, ai=ai)
+    status = ai_status(ai)
     print(f"CV Maker running at http://{args.host}:{args.port}  (memory in {Path(args.data).resolve()})")
-    if not credentials_configured():
-        print("Claude isn't configured: set ANTHROPIC_API_KEY to enable automatic updates.")
+    print(f"AI: {status['label']}" + (f"  -  {status['message']}" if status["message"] else ""))
     app.run(host=args.host, port=args.port, threaded=True)
 
 

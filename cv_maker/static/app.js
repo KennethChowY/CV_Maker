@@ -47,8 +47,10 @@ function render(next) {
   const { settings, cv_html, cv_meta, ai_enabled } = state;
 
   const status = $("ai-status");
-  status.textContent = ai_enabled ? "Claude connected" : "Claude not configured: set ANTHROPIC_API_KEY";
-  status.classList.toggle("off", !ai_enabled);
+  const ai = state.ai_status;
+  status.textContent = ai.label + (ai.message ? ` · ${ai.message}` : "");
+  status.title = ai.message || "";
+  status.classList.toggle("off", !ai.ready);
   $("add").disabled = !ai_enabled;
 
   if (document.activeElement !== $("target")) $("target").value = settings.target || "";
@@ -223,6 +225,10 @@ function renderHistory() {
 
 // ---------- Actions ----------
 
+function busyText(text) {
+  return state.ai_status.local ? `${text} A local model can take a few minutes.` : text;
+}
+
 async function addToMemory() {
   const text = $("input").value.trim();
   const files = $("files").files;
@@ -232,7 +238,7 @@ async function addToMemory() {
   for (const f of files) form.append("files", f);
   await savingEdits;
   const rebuilding = state.settings.auto_rebuild && !state.cv_meta.edited;
-  await withBusy(rebuilding ? "Updating memory and rewriting your CV…" : "Updating memory…", async () => {
+  await withBusy(busyText(rebuilding ? "Updating memory and rewriting your CV…" : "Updating memory…"), async () => {
     const next = await api("POST", "/api/ingest", form);
     $("input").value = "";
     $("files").value = "";
@@ -246,7 +252,7 @@ async function rebuild() {
   await savingEdits;
   if (state.cv_meta.edited &&
       !confirm("Rebuilding replaces your manual edits to the CV. Use 'Save edits to memory' first if you want to keep them. Rebuild anyway?")) return;
-  await withBusy(state.ai_enabled ? "Writing the best version of your CV…" : "Building CV…", async () => {
+  await withBusy(state.ai_enabled ? busyText("Writing the best version of your CV…") : "Building CV…", async () => {
     render(await api("POST", "/api/build", { target: $("target").value }));
     showNotice("");
   });
@@ -264,7 +270,7 @@ function scheduleEditSave() {
 
 async function learnFromEdits() {
   await savingEdits;
-  await withBusy("Saving your edits into memory…", async () => {
+  await withBusy(busyText("Saving your edits into memory…"), async () => {
     const next = await api("POST", "/api/cv/learn", { text: $("cv").innerText });
     render(next);
     showResult(next);
