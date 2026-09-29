@@ -73,8 +73,11 @@ It can use either:
   Pages break at sensible places: never straight after a heading, never in the
   middle of a short entry or a list section like Skills, never leaving one bullet
   alone at the top of a page, and a long entry keeps its title with its first
-  two bullets. The dashed line in the preview shows exactly where the next page
-  starts, and the check warns if the last page is nearly empty.
+  two bullets. Pages 2 onwards start with a small running header (your name and
+  "Page 2 of 2"), and when a job continues from the previous page it's
+  introduced with "Job title · Organisation (continued)". The dashed line in
+  the preview shows exactly where the next page starts, and the check warns if
+  the last page is nearly empty.
 - **CV check.** Updates as you edit: page count, unfilled gaps, bullets with no
   numbers, weak openings like "Responsible for…", overlong bullets, mixed UK/US
   spelling, present tense on past roles, mixed date formats, inconsistent full

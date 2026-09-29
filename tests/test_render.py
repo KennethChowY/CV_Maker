@@ -119,4 +119,8 @@ def test_page_break_hints_in_the_html():
 def test_pdf_page_runs_the_same_line_tightening():
     from cv_maker.export import page_document
     doc = page_document("<p>x</p>", title="t", template="classic", accent="#1f4e79", page_size="A4", scale=1.0)
-    assert "window.CVLayout" in doc and "CVLayout.tighten(document.querySelector('.cv'))" in doc
+    assert "window.CVLayout" in doc and "CVLayout.tighten(cv)" in doc and "CVLayout.paginate(cv" in doc
+    assert "width: 210mm" in doc
+    letter = page_document("<p>x</p>", title="t", template="classic", accent="#1f4e79", page_size="letter",
+                           scale=1.0, paginate=False)
+    assert "CVLayout.paginate(cv" not in letter and "width: 215.9mm" in letter

@@ -118,3 +118,13 @@ body.standalone .cv { max-width: 182mm; margin: 12mm auto; }
 .cv-entry, .cv-list, .cv-summary, .cv-header, .cv li { break-inside: avoid; }
 .cv-entry.long { break-inside: auto; }
 .cv-entry.long > ul > li:nth-child(-n+2), .cv-entry.long > ul > li:last-child { break-before: avoid; }
+
+/* Running header on pages 2 onwards, and the line that introduces an entry continued from the page before.
+   Only added when printing (see CVLayout.paginate); the preview shows where they'll go. */
+.cv-pagehead { break-before: page; display: flex; justify-content: space-between; gap: 1em;
+  font-size: 0.82em; color: var(--cv-muted); border-bottom: 1px solid var(--cv-rule);
+  padding-bottom: 0.25em; margin-bottom: 0.9em; }
+.cv-pagehead + .cv-section { margin-top: 0; }
+.cv-cont { color: var(--cv-muted); margin-bottom: 0.15em; }
+.cv-cont .cv-entry-title { color: var(--cv-ink); }
+.cv-cont + ul { margin-top: 0; }

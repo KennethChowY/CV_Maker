@@ -486,6 +486,7 @@ function cvHtml() {
   const copy = $("cv").cloneNode(true);
   copy.querySelectorAll(".improving, .flash").forEach((n) => n.classList.remove("improving", "flash"));
   copy.querySelectorAll("[data-tight]").forEach((n) => { n.style.letterSpacing = ""; n.removeAttribute("data-tight"); });
+  CVLayout.unpaginate(copy);
   copy.querySelectorAll("[style='']").forEach((n) => n.removeAttribute("style"));
   copy.querySelectorAll("[class='']").forEach((n) => n.removeAttribute("class"));
   return copy.innerHTML;
@@ -587,6 +588,19 @@ function printFallback(kind) {
   document.title = original;
 }
 
+// When printing from the browser (fallback, or Cmd/Ctrl+P), add the page headers and
+// "continued" lines just for the print, then take them out again.
+window.addEventListener("beforeprint", () => {
+  if ($("tab-cv").hidden || !state?.cv_html) return;
+  const page = state.settings.page_size === "letter" ? PAGE_MM.letter : PAGE_MM.A4;
+  const name = state.memory.profile.name || "";
+  CVLayout.paginate($("cv"), mm(page - 2 * PAD_MM - PAGE_SLACK_MM), name);
+});
+window.addEventListener("afterprint", () => {
+  CVLayout.unpaginate($("cv"));
+  layoutPages();
+});
+
 async function downloadPdf() {
   const scale = parseFloat(getComputedStyle($("cv")).getPropertyValue("--cv-scale")) || 1;
   const ok = await downloadFile(`/api/export/cv.pdf?scale=${scale}`, "Making your PDF…");
@@ -608,6 +622,7 @@ const PAGE_MM = { A4: 297, letter: 279.4 };
 const PAD_MM = 13;          // top/bottom padding of each printed page
 const MIN_SCALE = 0.82;     // smallest "fit to one page" will go (about 8.6pt text)
 const FIT_SLACK_MM = 8;     // printing lays text out slightly differently from the screen; leave room
+const PAGE_SLACK_MM = 8;    // same allowance when planning page breaks (must match export.py)
 let pxPerMm = 0;
 let layoutTimer = null;
 let lastPages = 1;
@@ -686,16 +701,17 @@ function layoutPages() {
     CVLayout.tighten(cv);  // line lengths changed with the new size
   }
 
-  // Where pages will really break, following the same keep-together rules as the PDF.
-  // A little allowance, because printing lays text out a hair taller than the screen.
-  const pages = CVLayout.breaks(cv, usable - mm(3));
+  // Where pages will really break, planned exactly as the PDF is (same rules, same room
+  // for the running header and "continued" lines, same allowance for print differences).
+  const pages = CVLayout.plan(cv, usable - mm(PAGE_SLACK_MM), CVLayout.extras(cv));
   lastPages = pages.breaks.length + 1;
   lastPageFill = pages.lastPageHeight / usable;
   const top = parseFloat(getComputedStyle(cv).paddingTop);
-  guides.replaceChildren(...pages.breaks.map((at, i) => {
+  guides.replaceChildren(...pages.breaks.map((b, i) => {
     const g = el("div", "page-guide");
-    g.style.top = `${top + at}px`;
-    g.append(el("span", "", `Page ${i + 2} starts here`));
+    g.style.top = `${top + b.y}px`;
+    const title = b.entry?.querySelector(".cv-entry-title")?.textContent.trim();
+    g.append(el("span", "", `Page ${i + 2} of ${lastPages} starts here${title ? ` · "${title}" continues` : ""}`));
     return g;
   }));
 

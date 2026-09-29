@@ -417,7 +417,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
             return error("There's no cover letter to download yet.")
         d = design()
         doc = page_document(body, title=file_name("Cover Letter", "pdf"), scale=1.0, **d,
-                            extra_css=".cv { padding: 20mm 22mm; }")
+                            extra_css=".cv { padding: 20mm 22mm; }", paginate=False)
         doc = doc.replace("<article class='cv ", "<article class='cv cover ", 1)
         try:
             pdf = html_to_pdf(doc)

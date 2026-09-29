@@ -62,21 +62,29 @@ def find_browser() -> str | None:
     return None
 
 
+PAGE_SLACK_MM = 8  # room left on each page for small print-vs-screen differences (matches app.js)
+
+
 def page_document(body: str, *, title: str, template: str, accent: str, page_size: str, scale: float,
-                  extra_css: str = "") -> str:
+                  extra_css: str = "", paginate: bool = True) -> str:
     """A complete HTML page for printing: no page margin (so browsers add no header or footer),
     with the margin applied as padding repeated on every page instead."""
     css = (STATIC / "cv.css").read_text(encoding="utf-8")
     size = "letter" if page_size == "letter" else "A4"
+    width_mm, height_mm = PAGE_MM[size]
+    # Page headers and "continued" lines, planned with the same code as the preview.
+    pages_js = (f"CVLayout.paginate(cv, CVLayout.mm({height_mm - 26 - PAGE_SLACK_MM}), "
+                f"(cv.querySelector('.cv-name') || {{textContent: ''}}).textContent.trim());" if paginate else "")
     accent_css = f"--cv-accent: {accent}; " if template == "modern" else ""  # other templates are black
     layout_js = (STATIC / "cv-layout.js").read_text(encoding="utf-8")  # same line tightening as the preview
     return (
         f"<!doctype html><html><head><meta charset='utf-8'><title>{escape(title)}</title><style>{css}\n"
         f"@page {{ size: {size}; margin: 0; }}\nhtml, body {{ margin: 0; background: #fff; }}\n"
-        f".cv {{ padding: 13mm 14mm; box-decoration-break: clone; -webkit-box-decoration-break: clone; }}\n"
+        f".cv {{ padding: 13mm 14mm; box-decoration-break: clone; -webkit-box-decoration-break: clone; "
+        f"box-sizing: border-box; width: {width_mm}mm; }}\n"
         f"{extra_css}</style></head><body>"
         f"<article class='cv t-{template}' style='{accent_css}--cv-scale: {scale:.3f}'>{body}</article>"
-        f"<script>{layout_js}\nCVLayout.tighten(document.querySelector('.cv'));</script>"
+        f"<script>{layout_js}\nconst cv = document.querySelector('.cv');\nCVLayout.tighten(cv);\n{pages_js}</script>"
         f"</body></html>"
     )
 
