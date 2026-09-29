@@ -14,7 +14,15 @@ from urllib.parse import quote
 
 from .ai import AIError, Attachment
 from .export import ExportError, html_to_docx, html_to_pdf, letter_to_docx, page_document
-from .models import NO_AI_MESSAGE, ModelManager, build_ai, check_api_key, credentials_configured, default_choice
+from .models import (
+    NO_AI_MESSAGE,
+    ModelManager,
+    api_config,
+    build_ai,
+    check_api_key,
+    credentials_configured,
+    default_choice,
+)
 from .render import basic_cv, render_cv, render_letter, section_list, tidy_cv
 from .schema import Memory
 from .store import GENERAL, STATUSES, Store
@@ -32,8 +40,8 @@ __all__ = ["create_app", "select_ai", "credentials_configured", "clean_html", "m
 
 
 def select_ai(backend: str | None = None):
-    """Build the default backend: 'claude', 'ollama', 'none', or 'auto' (Claude if a key is set, else Ollama)."""
-    return build_ai(default_choice(backend))
+    """Build the default backend: 'api', 'ollama', 'none', or 'auto' (an API key if one is set, else Ollama)."""
+    return build_ai(default_choice(backend), api_config())
 
 
 def ai_status(ai) -> dict:
@@ -161,7 +169,9 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
 
     @app.post("/api/models/key")
     def save_key():
-        models.save_key((request.get_json(silent=True) or {}).get("key", ""), verify=app.config["VERIFY_KEY"])
+        body = request.get_json(silent=True) or {}
+        models.save_key(str(body.get("key", "")), str(body.get("provider", "auto")), str(body.get("base_url", "")),
+                        verify=app.config["VERIFY_KEY"])
         return state()
 
     @app.delete("/api/models/key")
@@ -472,9 +482,9 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--data", default=os.environ.get("CV_MAKER_DATA", "data"), help="Where memory is stored")
     parser.add_argument(
-        "--ai", default=os.environ.get("CV_MAKER_AI", "auto"), choices=["auto", "claude", "ollama", "none"],
+        "--ai", default=os.environ.get("CV_MAKER_AI", "auto"), choices=["auto", "api", "ollama", "none"],
         help="Starting choice until one is picked on the page. "
-             "auto = Claude if ANTHROPIC_API_KEY is set, otherwise a free local model via Ollama",
+             "auto = your API key if one is set, otherwise a free local model via Ollama",
     )
     args = parser.parse_args()
     app = create_app(args.data, backend=args.ai)

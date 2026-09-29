@@ -23,7 +23,7 @@ def test_catalog_lists_recommended_and_installed_models(fake, tmp_path):
     client = create_app(tmp_path / "data").test_client()
     cat = client.get("/api/models").get_json()
     assert cat["choice"] == {"backend": "ollama", "model": "qwen3:8b"}
-    assert cat["ollama_running"] is True and cat["claude_available"] is False
+    assert cat["ollama_running"] is True and cat["api_key"]["set"] is False
     by_name = {m["name"]: m for m in cat["local"]}
     assert by_name["qwen3:8b"]["installed"] and not by_name["qwen3:4b"]["installed"]
     assert by_name["mistral:7b"]["installed"] and not by_name["mistral:7b"]["recommended"]
@@ -80,22 +80,32 @@ def test_ollama_not_running_is_reported(monkeypatch, tmp_path):
 def test_api_key_is_saved_privately_and_never_sent_to_the_page(fake, tmp_path):
     app = create_app(tmp_path / "data")
     checked = []
-    app.config["VERIFY_KEY"] = checked.append
-    client = app.test_client()
-    key = "sk-ant-api03-" + "x" * 40 + "WXYZ"
 
-    assert client.post("/api/models/key", json={"key": "not-a-key"}).status_code >= 400
+    def verify(provider, key, base_url):
+        checked.append((provider, key))
+        return ["gpt-writer-2", "gpt-writer-1"]
+
+    app.config["VERIFY_KEY"] = verify
+    client = app.test_client()
+    key = "sk-proj-" + "x" * 40 + "WXYZ"
+
+    assert client.post("/api/models/key", json={"key": "short"}).status_code >= 400
     state = client.post("/api/models/key", json={"key": key})
-    assert state.status_code == 200 and checked == [key]
+    assert state.status_code == 200 and checked == [("openai", key)]
     assert key not in state.get_data(as_text=True)
-    assert state.get_json()["ai_status"]["label"].startswith("Claude")
+    assert state.get_json()["ai_status"]["label"] == "gpt-writer-2 (API key)"
 
     cat = client.get("/api/models")
     assert key not in cat.get_data(as_text=True)
-    assert cat.get_json()["api_key"] == {"set": True, "source": "saved", "hint": "…WXYZ"}
-    assert cat.get_json()["choice"]["backend"] == "claude"
+    api = cat.get_json()["api_key"]
+    assert (api["set"], api["hint"], api["provider_name"], api["model"]) == (True, "…WXYZ", "OpenAI", "gpt-writer-2")
+    assert api["models"] == ["gpt-writer-2", "gpt-writer-1"]
+    assert cat.get_json()["choice"] == {"backend": "api", "model": "gpt-writer-2"}
     secrets = tmp_path / "data" / "secrets.json"
     assert oct(secrets.stat().st_mode & 0o777) == "0o600"
+
+    body = client.post("/api/models/choose", json={"backend": "api", "model": "gpt-writer-1"}).get_json()
+    assert body["ai_status"]["label"] == "gpt-writer-1 (API key)"
 
     client.delete("/api/models/key")
     assert not secrets.exists()
@@ -103,14 +113,51 @@ def test_api_key_is_saved_privately_and_never_sent_to_the_page(fake, tmp_path):
     assert cat["api_key"]["set"] is False and cat["choice"]["backend"] == "ollama"
 
 
+def test_provider_is_detected_or_chosen(fake, tmp_path):
+    app = create_app(tmp_path / "data")
+    seen = []
+    app.config["VERIFY_KEY"] = lambda provider, key, base_url: seen.append((provider, base_url)) or ["m1"]
+    client = app.test_client()
+    for key in ("sk-ant-api03-" + "a" * 30, "AIza" + "b" * 35, "gsk_" + "c" * 40, "sk-or-v1-" + "d" * 40):
+        assert client.post("/api/models/key", json={"key": key}).status_code == 200
+    assert [p for p, _ in seen] == ["anthropic", "google", "groq", "openrouter"]
+    # A key with no recognisable prefix needs the service to be picked.
+    res = client.post("/api/models/key", json={"key": "0123456789abcdef0123456789"})
+    assert res.status_code >= 400 and "Pick the service" in res.get_json()["error"]
+    res = client.post("/api/models/key", json={"key": "0123456789abcdef0123456789", "provider": "other"})
+    assert "API address" in res.get_json()["error"]
+    ok = client.post("/api/models/key", json={"key": "0123456789abcdef0123456789", "provider": "other",
+                                              "base_url": "https://llm.example.com/v1/"})
+    assert ok.status_code == 200 and seen[-1] == ("other", "https://llm.example.com/v1")
+
+
+def test_anthropic_key_uses_the_anthropic_client(fake, tmp_path):
+    from cv_maker.ai import ClaudeAI
+    app = create_app(tmp_path / "data")
+    app.config["VERIFY_KEY"] = lambda provider, key, base_url: ["claude-opus-5-5"]
+    client = app.test_client()
+    body = client.post("/api/models/key", json={"key": "sk-ant-api03-" + "z" * 40}).get_json()
+    assert body["ai_status"]["label"] == "claude-opus-5-5 (API key)"
+
+
 def test_rejected_key_is_not_saved(fake, tmp_path):
     from cv_maker.ai import AIError
 
-    def reject(key):
-        raise AIError("Anthropic didn't accept that key.")
+    def reject(provider, key, base_url):
+        raise AIError("OpenAI didn't accept the API key.")
 
     app = create_app(tmp_path / "data")
     app.config["VERIFY_KEY"] = reject
-    res = app.test_client().post("/api/models/key", json={"key": "sk-ant-api03-" + "y" * 40})
+    res = app.test_client().post("/api/models/key", json={"key": "sk-proj-" + "y" * 40})
     assert res.status_code >= 400 and "didn't accept" in res.get_json()["error"]
     assert not (tmp_path / "data" / "secrets.json").exists()
+
+
+def test_key_saved_by_an_earlier_version_still_works(fake, tmp_path):
+    import json
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "secrets.json").write_text(json.dumps({"anthropic_api_key": "sk-ant-api03-" + "q" * 40}))
+    (data / "settings.json").write_text(json.dumps({"ai_backend": "claude"}))
+    cat = create_app(data).test_client().get("/api/models").get_json()
+    assert cat["api_key"]["provider"] == "anthropic" and cat["choice"]["backend"] == "api"

@@ -1128,7 +1128,7 @@ function modelValue(backend, model = "") {
 function renderModels(next) {
   catalog = next;
   const sel = $("model-select");
-  const key = JSON.stringify([next.local, next.claude_available, next.choice, pendingModel]);
+  const key = JSON.stringify([next.local, next.api_key, next.choice, pendingModel]);
   if (key !== catalogKey) {  // rebuilding the list closes it if open, so only do it on change
     catalogKey = key;
     const free = document.createElement("optgroup");
@@ -1139,8 +1139,9 @@ function renderModels(next) {
       free.append(opt);
     }
     const paid = document.createElement("optgroup");
-    paid.label = "Best quality (paid, needs an API key)";
-    paid.append(new Option(next.claude_available ? "Claude" : "Claude: add your API key", modelValue("claude")));
+    paid.label = "Your own API key (paid, best quality)";
+    const apiKey = next.api_key;
+    paid.append(new Option(apiKey.set ? `API key · ${apiKey.provider_name}` : "Use an API key…", modelValue("api")));
     const none = new Option("No AI (plain layout)", modelValue("none"));
     sel.replaceChildren(free, paid, none);
     sel.value = pendingModel
@@ -1163,16 +1164,29 @@ function updateModelNote() {
   let text = "";
   let cls = "";
   const key = catalog.api_key;
-  const wantsClaude = backend === "claude";
-  $("key-form").hidden = !wantsClaude || key.set;
-  $("key-status").hidden = !wantsClaude || !key.set;
-  $("key-status-text").textContent = key.source === "environment"
-    ? "Using the key from ANTHROPIC_API_KEY."
-    : `Key saved (${key.hint}).`;
+  const wantsKey = backend === "api";
+  $("key-form").hidden = !wantsKey || key.set;
+  $("key-status").hidden = !wantsKey || !key.set;
+  if (wantsKey && !key.set && !$("key-provider").options.length) {
+    $("key-provider").append(new Option("Work it out from the key", "auto"));
+    catalog.providers.forEach((p) => $("key-provider").append(new Option(p.name, p.id)));
+  }
+  if (wantsKey && key.set) {
+    $("key-status-text").textContent = key.source === "environment"
+      ? `${key.provider_name} key from ANTHROPIC_API_KEY · model:`
+      : `${key.provider_name} key saved (${key.hint}) · model:`;
+    const models = key.models.length ? key.models : [key.model];
+    const sel = $("api-model");
+    if (sel.dataset.list !== JSON.stringify(models)) {
+      sel.replaceChildren(...models.map((m) => new Option(m, m)));
+      sel.dataset.list = JSON.stringify(models);
+    }
+    sel.value = key.model;
+  }
   $("key-remove").hidden = key.source !== "saved";
-  if (wantsClaude && !key.set) {
+  if (wantsKey && !key.set) {
     text = "The best writing and fastest updates.";
-  } else if (wantsClaude) {
+  } else if (wantsKey) {
     [text, cls] = ["Fast and the best writing. Costs a few cents per update.", "ok"];
   } else if (backend === "none") {
     text = "Your CV is laid out straight from memory, without AI wording.";
@@ -1203,7 +1217,7 @@ function updateModelNote() {
 
 async function onModelChange() {
   const { backend, model, local } = selected();
-  if (backend === "claude" && !catalog.api_key.set) {
+  if (backend === "api" && !catalog.api_key.set) {
     updateModelNote();  // show the key box; switch once a key is saved
     $("key-input").focus();
     return;
@@ -1249,8 +1263,9 @@ async function saveKey(e) {
   e.preventDefault();
   const key = $("key-input").value.trim();
   if (!key) { $("key-input").focus(); return; }
-  await withBusy("Checking your key with Anthropic…", async () => {
-    render(await api("POST", "/api/models/key", { key }));
+  const body = { key, provider: $("key-provider").value || "auto", base_url: $("key-url").value.trim() };
+  await withBusy("Checking your key…", async () => {
+    render(await api("POST", "/api/models/key", body));
     $("key-input").value = "";
     showNotice("");
     await loadModels();
@@ -1330,6 +1345,15 @@ $("app-form").addEventListener("submit", createApplication);
 $("download-btn").addEventListener("click", downloadModel);
 $("key-form").addEventListener("submit", saveKey);
 $("key-remove").addEventListener("click", removeKey);
+$("key-provider").addEventListener("change", () => { $("key-url-field").hidden = $("key-provider").value !== "other"; });
+$("api-model").addEventListener("change", async (e) => {
+  try {
+    render(await api("POST", "/api/models/choose", { backend: "api", model: e.target.value }));
+  } catch (err) {
+    showNotice(err.message, true);
+  }
+  loadModels();
+});
 window.addEventListener("focus", () => { if (!downloadPoll) loadModels(); });
 
 api("GET", "/api/state").then(render).catch((err) => showNotice(err.message, true));

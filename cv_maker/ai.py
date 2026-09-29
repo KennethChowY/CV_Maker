@@ -126,7 +126,7 @@ class ClaudeAI:
         self.model = model
 
     def status(self) -> dict:
-        return {"label": "Claude (best quality)", "ready": True, "message": "", "local": False}
+        return {"label": f"{self.model} (API key)", "ready": True, "message": "", "local": False}
 
     def _parse(self, *, system: str, content: list[dict], output_format, effort: str):
         try:

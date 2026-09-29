@@ -287,3 +287,8 @@ button.danger { color: var(--danger); }
 /* Cover letter page */
 .paper.cover { padding: 20mm 22mm; }
 .paper.cover.letter-us { width: 8.5in; min-height: 11in; }
+.key-form .field { margin-bottom: 6px; }
+.key-form select, .key-form #key-url { width: 100%; }
+.key-status { flex-wrap: wrap; align-items: flex-end; }
+.key-model { flex: 1; min-width: 0; }
+.key-model select { width: 100%; }

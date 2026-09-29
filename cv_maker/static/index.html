@@ -28,15 +28,23 @@
         <select id="model-select" aria-label="AI model"></select>
         <p id="model-note" class="hint model-note"></p>
         <form id="key-form" class="key-form" hidden>
-          <label for="key-input" class="hint">Paste your Anthropic API key to use Claude. It's checked with Anthropic, then kept only in this app's data folder on your computer.</label>
+          <p class="hint">Paste an API key from the AI service you use. It's checked with that service, then kept only in this app's data folder on your computer.</p>
+          <label class="field"><span class="field-label">Service</span>
+            <select id="key-provider"></select>
+          </label>
+          <label class="field" id="key-url-field" hidden><span class="field-label">API address</span>
+            <input id="key-url" placeholder="https://api.example.com/v1" autocomplete="off" spellcheck="false">
+          </label>
           <div class="row">
-            <input id="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…">
+            <input id="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your API key">
             <button id="key-save" class="primary" type="submit">Save</button>
           </div>
-          <p class="hint">Get one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Pay-as-you-go; typically a few cents per update.</p>
+          <p class="hint">Works with OpenAI, Anthropic, Google Gemini, Groq, OpenRouter, xAI, or any OpenAI-compatible service. Pay-as-you-go with the service you choose.</p>
         </form>
         <div id="key-status" class="key-status" hidden>
-          <span id="key-status-text"></span>
+          <label class="field key-model"><span class="field-label" id="key-status-text"></span>
+            <select id="api-model"></select>
+          </label>
           <button id="key-remove" type="button" class="small">Remove key</button>
         </div>
         <div id="model-download" class="model-download" hidden>

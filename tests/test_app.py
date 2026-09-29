@@ -158,6 +158,7 @@ def test_auto_backend_uses_free_local_model_without_api_key(tmp_path, monkeypatc
     assert select_ai("none") is None
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     assert isinstance(select_ai("auto"), ClaudeAI)
+    assert isinstance(select_ai("api"), ClaudeAI)
     assert isinstance(select_ai("ollama"), OllamaAI)
 
 

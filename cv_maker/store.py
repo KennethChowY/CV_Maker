@@ -130,20 +130,27 @@ class Store:
 
     # ---- API key ------------------------------------------------------
 
-    def load_api_key(self) -> str:
+    def load_api_config(self) -> dict:
+        """The saved API key and which service it's for: {"key", "provider", "base_url", "models"}."""
         if not self.secrets_path.exists():
-            return ""
-        return json.loads(self.secrets_path.read_text(encoding="utf-8")).get("anthropic_api_key", "")
+            return {}
+        data = json.loads(self.secrets_path.read_text(encoding="utf-8"))
+        if "anthropic_api_key" in data and "key" not in data:  # saved by an earlier version of the app
+            return {"key": data["anthropic_api_key"], "provider": "anthropic", "base_url": "", "models": []}
+        return data
 
-    def save_api_key(self, key: str | None) -> None:
-        if not key:
+    def load_api_key(self) -> str:
+        return self.load_api_config().get("key", "")
+
+    def save_api_config(self, config: dict | None) -> None:
+        if not config:
             self.secrets_path.unlink(missing_ok=True)
             return
         tmp = self.secrets_path.with_suffix(".tmp")
         # Create the file readable only by the current user before writing the key into it.
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"anthropic_api_key": key}, f)
+            json.dump(config, f)
         tmp.replace(self.secrets_path)
 
     # ---- versions (one per job application) ---------------------------

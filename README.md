@@ -12,9 +12,11 @@ It can use either:
 
 - **A free local model** through [Ollama](https://ollama.com). It runs on your
   own computer, costs nothing, and your data never leaves your machine. This is
-  the default when no Claude API key is set.
-- **Claude** through the Anthropic API. It's pay-as-you-go (a few cents per
-  update) and writes noticeably better CVs, especially on modest hardware.
+  the default when no API key is set.
+- **Your own API key** from an AI service: OpenAI, Anthropic, Google Gemini,
+  Groq, OpenRouter, xAI or any OpenAI-compatible service. It's pay-as-you-go
+  with that service (typically a few cents per update) and writes noticeably
+  better CVs than small local models, especially on modest hardware.
 
 ## How it works
 
@@ -129,7 +131,7 @@ What to expect:
   model too big for your computer's memory gets very slow. The app keeps the
   model loaded between updates, and a rebuild only rewrites entries that
   changed, so most rebuilds after the first are much quicker.
-- **Quality.** Local models write weaker CVs than Claude. So with a local model
+- **Quality.** Local models write weaker CVs than hosted models. So with a local model
   the app lays out the CV itself (newest first, consistent formatting) and the
   model only improves the wording. Check the result, and fix wording directly
   on the CV.
@@ -139,20 +141,23 @@ What to expect:
 - **PDFs.** Attached PDFs are converted to text first, so scanned (image-only)
   PDFs won't work; paste the text instead.
 
-### Option B: Claude (paid, best quality)
+### Option B: your own API key (paid, best quality)
 
-Choose **Claude** in the AI model box and paste an API key from
-https://console.anthropic.com/settings/keys. The key is checked with Anthropic,
-then saved only in `data/secrets.json` on your computer (readable only by you),
-and never shown on the page again. **Remove key** deletes it. You can switch
-between Claude and a free local model at any time; your memory and CVs carry
-over. Setting `ANTHROPIC_API_KEY` in the terminal also works.
+Choose **Use an API key…** in the AI model box and paste a key. The app works
+out which service it's for from the key's format (or pick the service from the
+list; for any other OpenAI-compatible service, choose *Other* and enter its API
+address). The key is checked with the service, then saved only in
+`data/secrets.json` on your computer (readable only by you), and never shown on
+the page again. After that, pick which of that service's models to use.
+**Remove key** deletes it. You can switch between your API key and a free local
+model at any time; your memory and CVs carry over. An Anthropic key in the
+`ANTHROPIC_API_KEY` environment variable also works.
 
 `--ai` sets the starting choice before anything has been picked on the page:
 
 ```bash
 python -m cv_maker --ai ollama    # start with the local model
-python -m cv_maker --ai claude    # start with Claude
+python -m cv_maker --ai api       # start with your API key
 python -m cv_maker --ai none      # start with no AI: plain layout, edit memory by hand
 ```
 
@@ -160,13 +165,13 @@ python -m cv_maker --ai none      # start with no AI: plain layout, edit memory 
 
 | Flag / env var | Default | Meaning |
 | --- | --- | --- |
-| `--ai` / `CV_MAKER_AI` | `auto` | Starting choice: `auto`, `claude`, `ollama` or `none` |
+| `--ai` / `CV_MAKER_AI` | `auto` | Starting choice: `auto`, `api`, `ollama` or `none` |
 | `--data` / `CV_MAKER_DATA` | `data/` | Where your memory and CV are stored |
 | `--port` | `5000` | Port to serve on |
 | `CV_MAKER_OLLAMA_MODEL` | `qwen3:8b` | Starting local model, before one is picked on the page |
 | `CV_MAKER_OLLAMA_CONTEXT` | `16384` | Local model context size; raise it if you see "ran out of room" |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Where Ollama is running |
-| `CV_MAKER_MODEL` | `claude-opus-5-5` | Claude model to use |
+| `CV_MAKER_MODEL` | `claude-opus-5-5` | Default model for an Anthropic key |
 
 ## Your data
 
@@ -180,14 +185,14 @@ Everything is stored as plain files in the data directory:
 | `cv.json`, `cv.html`, `letter.json` | The general CV (including manual edits) and its cover letter |
 | `versions/<id>/` | One folder per job application: its details, tailored CV and cover letter |
 | `settings.json` | Chosen model, design, section order and other settings |
-| `secrets.json` | Your Claude API key, if you added one on the page |
+| `secrets.json` | Your API key and which service it's for, if you added one on the page |
 | `wording_cache.json` | Local model's wording, reused so unchanged entries aren't rewritten |
 
 `data/` is in `.gitignore` so personal details aren't committed by accident.
 Back it up, or point `--data` at a private folder or repository.
 
-With the local model, nothing leaves your computer. With Claude, your memory
-and any files you attach are sent to the Claude API when you add something or
+With the local model, nothing leaves your computer. With an API key, your memory
+and any files you attach are sent to that service when you add something or
 rebuild the CV.
 
 ## Development
@@ -201,7 +206,9 @@ pytest
 | --- | --- |
 | `cv_maker/schema.py` | Memory and CV data models (also the structured-output schemas) |
 | `cv_maker/store.py` | File storage, history, snapshots and undo |
-| `cv_maker/ai.py` | Claude backend and the CV-writing prompt |
+| `cv_maker/ai.py` | Anthropic-key backend and the CV-writing prompt |
+| `cv_maker/backend.py` | Shared logic for chat-style models: memory updates, CV wording and its cache |
+| `cv_maker/api_models.py`, `providers.py` | API keys for OpenAI-compatible services, and recognising which service a key is for |
 | `cv_maker/writing.py` | Prompts shared by both backends: bullet rewrites and cover letters |
 | `cv_maker/export.py` | PDF (via a local Chrome-based browser) and Word downloads |
 | `cv_maker/ollama.py` | Local-model backend (Ollama) and the change-merging logic |

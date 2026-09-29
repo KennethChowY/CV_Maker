@@ -8,8 +8,11 @@ from pathlib import Path
 
 import anthropic
 
+from .ai import MODEL as ANTHROPIC_DEFAULT_MODEL
 from .ai import AIError, ClaudeAI
+from .api_models import OpenAICompatibleAI
 from .ollama import DEFAULT_MODEL, OllamaAI, is_installed
+from .providers import PROVIDERS, default_model, detect_provider
 from .store import Store
 
 # Shown in the model picker even before they're downloaded. Sizes are approximate.
@@ -24,28 +27,46 @@ NO_AI_MESSAGE = (
 )
 
 
-def credentials_configured(store: Store | None = None) -> bool:
-    """True if Claude can be used: a key saved on the page, an environment variable, or an SDK profile."""
-    if store is not None and store.load_api_key():
-        return True
+def _env_anthropic() -> bool:
     if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
         return True
     # A profile created with `ant auth login` is also picked up by the SDK.
     return (Path.home() / ".config" / "anthropic").exists()
 
 
-def check_api_key(key: str) -> None:
-    """Make a free request to confirm Anthropic accepts the key."""
-    try:
-        anthropic.Anthropic(api_key=key, max_retries=0, timeout=15).models.list(limit=1)
-    except anthropic.AuthenticationError as e:
-        raise AIError("Anthropic didn't accept that key. Check you copied all of it.") from e
-    except anthropic.PermissionDeniedError as e:
-        raise AIError("That key doesn't have permission to use Claude.") from e
-    except anthropic.APIConnectionError as e:
-        raise AIError("Couldn't reach Anthropic to check the key. Check your internet connection.") from e
-    except anthropic.APIStatusError as e:
-        raise AIError(f"Anthropic couldn't check the key right now ({e.status_code}). Try again.") from e
+def api_config(store: Store | None = None) -> dict:
+    """The API key to use: one saved on the page, else an Anthropic key from the environment."""
+    saved = store.load_api_config() if store is not None else {}
+    if saved.get("key"):
+        return {**saved, "source": "saved"}
+    if _env_anthropic():
+        return {"key": "", "provider": "anthropic", "base_url": "", "models": [], "source": "environment"}
+    return {}
+
+
+def credentials_configured(store: Store | None = None) -> bool:
+    """True if an API key is available (saved on the page, or an Anthropic key in the environment)."""
+    return bool(api_config(store))
+
+
+def check_api_key(provider: str, key: str, base_url: str = "") -> list[str]:
+    """Confirm the service accepts the key (a free request) and return the models it can use."""
+    if PROVIDERS[provider]["kind"] == "anthropic":
+        try:
+            page = anthropic.Anthropic(api_key=key, max_retries=0, timeout=20).models.list(limit=100)
+            return [m.id for m in page.data]
+        except anthropic.AuthenticationError as e:
+            raise AIError("Anthropic didn't accept that key. Check you copied all of it.") from e
+        except anthropic.PermissionDeniedError as e:
+            raise AIError("That key doesn't have permission to use these models.") from e
+        except anthropic.APIConnectionError as e:
+            raise AIError("Couldn't reach Anthropic to check the key. Check your internet connection.") from e
+        except anthropic.APIStatusError as e:
+            raise AIError(f"Anthropic couldn't check the key right now ({e.status_code}). Try again.") from e
+    models = OpenAICompatibleAI(base_url or PROVIDERS[provider]["base_url"], key, provider=provider).list_models()
+    if not models:
+        raise AIError("The key works, but the service didn't list any models it can use.")
+    return models
 
 
 def default_choice(backend: str | None = None, store: Store | None = None) -> dict:
@@ -53,16 +74,27 @@ def default_choice(backend: str | None = None, store: Store | None = None) -> di
     backend = (backend or os.environ.get("CV_MAKER_AI") or "auto").lower()
     if backend == "local":
         backend = "ollama"
+    if backend in ("claude", "anthropic"):
+        backend = "api"
     if backend == "auto":
-        backend = "claude" if credentials_configured(store) else "ollama"
-    if backend not in ("claude", "ollama", "none"):
-        raise ValueError(f"Unknown AI backend '{backend}'. Use auto, claude, ollama or none.")
+        backend = "api" if credentials_configured(store) else "ollama"
+    if backend not in ("api", "ollama", "none"):
+        raise ValueError(f"Unknown AI backend '{backend}'. Use auto, api, ollama or none.")
     return {"backend": backend, "model": DEFAULT_MODEL if backend == "ollama" else ""}
 
 
-def build_ai(choice: dict, api_key: str = "", cache_dir: Path | None = None):
-    if choice["backend"] == "claude":
-        return ClaudeAI(anthropic.Anthropic(api_key=api_key) if api_key else None)
+def build_ai(choice: dict, api: dict | None = None, cache_dir: Path | None = None):
+    if choice["backend"] in ("api", "claude"):
+        api = api or {}
+        provider = api.get("provider") or "anthropic"
+        if not api:
+            return None
+        if PROVIDERS.get(provider, {}).get("kind") == "anthropic":
+            client = anthropic.Anthropic(api_key=api["key"]) if api.get("key") else None
+            return ClaudeAI(client, model=choice["model"] or ANTHROPIC_DEFAULT_MODEL)
+        cache = cache_dir / "wording_cache.json" if cache_dir else None
+        return OpenAICompatibleAI(api.get("base_url") or PROVIDERS[provider]["base_url"], api["key"],
+                                  model=choice["model"], provider=provider, cache_path=cache)
     if choice["backend"] == "ollama":
         cache = cache_dir / "wording_cache.json" if cache_dir else None
         return OllamaAI(model=choice["model"] or DEFAULT_MODEL, cache_path=cache)
@@ -86,31 +118,36 @@ class ModelManager:
     def choice(self) -> dict:
         settings = self.store.load_settings()
         if settings.get("ai_backend"):
-            return {"backend": settings["ai_backend"], "model": settings.get("ai_model", "")}
+            backend = "api" if settings["ai_backend"] == "claude" else settings["ai_backend"]
+            return {"backend": backend, "model": settings.get("ai_model", "")}
         return dict(self._default)
 
     def current(self):
         if self.pinned:
             return self._fixed
         choice = self.choice()
-        api_key = self.store.load_api_key()
-        key = (choice["backend"], choice["model"], hash(api_key))
+        api = api_config(self.store)
+        key = (choice["backend"], choice["model"], hash((api.get("key"), api.get("provider"), api.get("base_url"))))
         with self._lock:
             if key != self._key:
-                self._ai, self._key = build_ai(choice, api_key, self.store.dir), key
+                self._ai, self._key = build_ai(choice, api, self.store.dir), key
             return self._ai
 
     def choose(self, backend: str, model: str = "") -> None:
         if self.pinned:
             raise AIError("The AI model is fixed for this run of the app.")
         backend = (backend or "").lower()
-        if backend not in ("claude", "ollama", "none"):
+        if backend == "claude":
+            backend = "api"
+        if backend not in ("api", "ollama", "none"):
             raise AIError("Pick a model from the list.")
-        if backend == "claude" and not credentials_configured(self.store):
-            raise AIError("Claude needs an API key. Paste one in the AI model box.")
+        if backend == "api" and not credentials_configured(self.store):
+            raise AIError("Add an API key in the AI model box first.")
         if backend == "ollama" and not model.strip():
             raise AIError("Pick which local model to use.")
-        self.store.save_settings({"ai_backend": backend, "ai_model": model.strip() if backend == "ollama" else ""})
+        if backend == "api" and not model.strip():
+            model = self.key_status()["model"]
+        self.store.save_settings({"ai_backend": backend, "ai_model": model.strip() if backend != "none" else ""})
 
     def local_client(self) -> OllamaAI:
         ai = self.current()
@@ -141,33 +178,49 @@ class ModelManager:
             "choice": choice,
             "pinned": self.pinned,
             "ollama_running": ollama_running,
-            "claude_available": credentials_configured(self.store),
             "api_key": self.key_status(),
+            "providers": [{"id": pid, "name": p["name"]} for pid, p in PROVIDERS.items()],
             "local": local,
             "downloads": self.downloads,
         }
 
     def key_status(self) -> dict:
-        """Whether a Claude key is set and where from. Never includes the key itself."""
-        saved = self.store.load_api_key()
-        if saved:
-            return {"set": True, "source": "saved", "hint": f"…{saved[-4:]}"}
-        if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
-            return {"set": True, "source": "environment", "hint": ""}
-        return {"set": False, "source": "", "hint": ""}
+        """Whether an API key is set, for which service, and its models. Never includes the key itself."""
+        api = api_config(self.store)
+        if not api:
+            return {"set": False, "source": "", "hint": "", "provider": "", "provider_name": "", "models": [], "model": ""}
+        provider = api.get("provider") or "anthropic"
+        choice = self.choice()
+        models = api.get("models") or ([ANTHROPIC_DEFAULT_MODEL] if provider == "anthropic" else [])
+        model = choice["model"] if choice["backend"] == "api" and choice["model"] else default_model(provider, models)
+        if provider == "anthropic" and not choice["model"]:
+            model = ANTHROPIC_DEFAULT_MODEL
+        return {"set": True, "source": api["source"], "hint": f"…{api['key'][-4:]}" if api.get("key") else "",
+                "provider": provider, "provider_name": PROVIDERS.get(provider, {}).get("name", provider),
+                "models": models, "model": model}
 
-    def save_key(self, key: str, verify=check_api_key) -> None:
+    def save_key(self, key: str, provider: str = "auto", base_url: str = "", verify=check_api_key) -> None:
         key = (key or "").strip()
-        if not key.startswith("sk-ant-") or len(key) < 30 or any(c.isspace() for c in key):
-            raise AIError("That doesn't look like an Anthropic API key. It should start with sk-ant-.")
-        verify(key)
-        self.store.save_api_key(key)
+        base_url = (base_url or "").strip().rstrip("/")
+        if len(key) < 20 or any(c.isspace() for c in key):
+            raise AIError("That doesn't look like a complete API key. Copy the whole key and paste it again.")
+        if provider in ("", "auto"):
+            provider = detect_provider(key)
+            if not provider:
+                raise AIError("Couldn't tell which service this key is for. Pick the service from the list.")
+        if provider not in PROVIDERS:
+            raise AIError("Unknown service.")
+        if provider == "other" and not base_url.startswith(("http://", "https://")):
+            raise AIError("For another service, enter its API address, e.g. https://api.example.com/v1.")
+        models = verify(provider, key, base_url)
+        model = ANTHROPIC_DEFAULT_MODEL if PROVIDERS[provider]["kind"] == "anthropic" else default_model(provider, models)
+        self.store.save_api_config({"key": key, "provider": provider, "base_url": base_url, "models": models[:200]})
         if not self.pinned:
-            self.store.save_settings({"ai_backend": "claude", "ai_model": ""})
+            self.store.save_settings({"ai_backend": "api", "ai_model": model})
 
     def remove_key(self) -> None:
-        self.store.save_api_key(None)
-        if not self.pinned and self.choice()["backend"] == "claude" and not credentials_configured(self.store):
+        self.store.save_api_config(None)
+        if not self.pinned and self.choice()["backend"] == "api" and not credentials_configured(self.store):
             self.store.save_settings({"ai_backend": "ollama", "ai_model": DEFAULT_MODEL})
 
     def start_download(self, model: str) -> None:
