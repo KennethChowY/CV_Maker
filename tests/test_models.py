@@ -132,7 +132,6 @@ def test_provider_is_detected_or_chosen(fake, tmp_path):
 
 
 def test_anthropic_key_uses_the_anthropic_client(fake, tmp_path):
-    from cv_maker.ai import ClaudeAI
     app = create_app(tmp_path / "data")
     app.config["VERIFY_KEY"] = lambda provider, key, base_url: ["claude-opus-5-5"]
     client = app.test_client()
