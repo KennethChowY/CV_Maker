@@ -36,8 +36,9 @@ ACADEMIC_GUIDANCE = (
     "This is an academic CV for a PhD or research application. Emphasise research: for research roles "
     "and projects, bullets should say the research question, the methods and tools, and the findings or "
     "outputs (datasets, software, papers, posters). The `headline` is their field, e.g. 'Data Science "
-    "Graduate, Epidemiology Research'. The `summary` is a 2-3 sentence statement of research interests "
-    "matched to the programme, not a sales pitch. Keep academic awards, scholarships, coursework and "
+    "Graduate, Epidemiology Research'. The `summary` is ONE line of 4-8 research-interest keywords "
+    "separated by ' · ' (e.g. 'Exposome data science · Environmental epidemiology · Statistical methods'), "
+    "taken from the memory's research_interests and their work, and ordered to match the programme. Keep academic awards, scholarships, coursework and "
     "thesis details. Plain, precise language; no marketing words.")
 
 LANGUAGES = {"en": "English", "zh-Hant": "Traditional Chinese (Hong Kong)", "zh-Hans": "Simplified Chinese"}

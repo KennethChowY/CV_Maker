@@ -13,7 +13,7 @@
 </header>
 {% if cv.summary %}
 <section class="cv-section" data-section="summary"{% if "summary" in hidden %} hidden{% endif %}>
-  <h2>Summary</h2>
+  <h2>{{ cv.summary_title or "Summary" }}</h2>
   <p class="cv-summary">{{ cv.summary | mark }}</p>
 </section>
 {% endif %}
@@ -41,7 +41,7 @@
   <ul class="cv-items">
     {% for i in s.items %}
     {% set parts = i.split(':', 1) %}
-    {% if parts | length == 2 and parts[0] | length <= 30 %}
+    {% if parts | length == 2 and parts[0] | length <= 30 and s.heading not in ("References",) and not s.heading.startswith("Publications") %}
     <li><strong>{{ parts[0] | mark }}:</strong>{{ parts[1] | mark }}</li>
     {% else %}
     <li>{{ i | mark }}</li>

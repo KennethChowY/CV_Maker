@@ -31,6 +31,7 @@ from .schema import (
     Memory,
     Profile,
     Project,
+    Referee,
     SkillGroup,
 )
 from .writing import BulletSuggestions, CoverLetter, clean_suggestions, improve_prompt, letter_prompt
@@ -74,7 +75,10 @@ tutoring roles get kind "teaching". A final-year project, capstone or thesis goe
 `thesis` field (title and supervisor); if it was real research, also add it as a project with kind \
 "research". Other research outside a job is a project with kind "research". Peer reviewing, \
 organising events or seminars, committees, mentoring, outreach and society roles are achievements \
-with kind "service".
+with kind "service". For papers, posters and talks, fill `authors` (as in a citation), `status` and \
+`issuer` (the journal or conference). The PI or supervisor of a research role goes in its \
+`supervisor`. People who will write references go in `upsert_referees`; research interests \
+(topics they want to research) in `add_research_interests`.
 - Text in square brackets that is an unfilled template gap, like [month year] or [rating], is \
 not a fact: leave it out and ask for the real value in `questions`.
 - When a new role replaces an old one (a promotion or new job), also upsert the old role with its end date.
@@ -135,6 +139,8 @@ class MemoryUpdate(BaseModel):
     upsert_education: list[Education] = Field(default_factory=list)
     upsert_projects: list[Project] = Field(default_factory=list)
     upsert_achievements: list[Achievement] = Field(default_factory=list)
+    upsert_referees: list[Referee] = Field(default_factory=list)
+    add_research_interests: list[str] = Field(default_factory=list)
     skills: list[SkillGroup] = Field(default_factory=list)
     add_languages: list[str] = Field(default_factory=list)
     add_interests: list[str] = Field(default_factory=list)
@@ -154,6 +160,7 @@ _SAME_ITEM = {
     "education": lambda x: _norm(x.institution, x.qualification, x.field),
     "projects": lambda x: _norm(x.name),
     "achievements": lambda x: _norm(x.title),
+    "referees": lambda x: _norm(x.name),
 }
 
 
@@ -180,7 +187,7 @@ def apply_update(memory: Memory, update: MemoryUpdate) -> Memory:
     if update.summary.strip():
         m.summary = update.summary.strip()
 
-    for section in ("experience", "education", "projects", "achievements"):
+    for section in ("experience", "education", "projects", "achievements", "referees"):
         items = getattr(m, section)
         same = _SAME_ITEM[section]
         for new in getattr(update, f"upsert_{section}"):
@@ -203,13 +210,14 @@ def apply_update(memory: Memory, update: MemoryUpdate) -> Memory:
             m.skills.append(group)
 
     m.languages = _add_unique(m.languages, update.add_languages)
+    m.research_interests = _add_unique(m.research_interests, update.add_research_interests)
     m.interests = _add_unique(m.interests, update.add_interests)
     m.preferences = _add_unique(m.preferences, update.add_preferences)
     m.notes = _add_unique(m.notes, update.add_notes)
 
     if update.remove_ids:
         drop = set(update.remove_ids)
-        for section in ("experience", "education", "projects", "achievements"):
+        for section in ("experience", "education", "projects", "achievements", "referees"):
             setattr(m, section, [x for x in getattr(m, section) if x.id not in drop])
     return m
 
@@ -343,7 +351,8 @@ class ChatBackend:
         tmp.write_text(json.dumps(cache), encoding="utf-8")
         tmp.replace(self.cache_path)
 
-    def build_cv(self, memory: Memory, target: str = "", conventions: str = "", academic: bool = False) -> CVDocument:
+    def build_cv(self, memory: Memory, target: str = "", conventions: str = "", academic: bool = False,
+                 references: bool = True) -> CVDocument:
         """The app lays the CV out from memory; the model only improves the wording.
 
         Wording for entries that haven't changed since the last build (same entry, same
@@ -393,6 +402,7 @@ class ChatBackend:
         return assemble_cv(
             memory,
             academic=academic,
+            references=references,
             headline=overall["headline"],
             summary=overall["summary"],
             bullets={i: w["bullets"] for i, w in wordings.items() if w["bullets"]},

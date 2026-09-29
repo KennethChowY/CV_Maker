@@ -161,8 +161,9 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         academic = info["kind"] == "phd"
         conventions = "\n".join(x for x in (ACADEMIC_GUIDANCE if academic else "",
                                              REGIONS.get(info["region"], REGIONS[""])["guidance"]) if x)
-        cv = tidy_cv(ai.build_cv(memory, info["target"], conventions, academic=academic) if ai
-                     else basic_cv(memory, academic=academic))
+        references = info["region"] != "us"  # US programmes collect reference letters separately
+        cv = tidy_cv(ai.build_cv(memory, info["target"], conventions, academic=academic, references=references) if ai
+                     else basic_cv(memory, academic=academic, references=references))
         if ai and info["language"] in LANGUAGES and info["language"] != "en":
             cv = translated(ai, cv, info["language"], vid)
         store.save_cv(cv, render(cv, vid), info["target"], vid)

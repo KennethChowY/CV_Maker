@@ -16,6 +16,7 @@
       <button class="tab active" data-tab="cv" role="tab">CV</button>
       <button class="tab" data-tab="letter" role="tab">Cover letter</button>
       <button class="tab" data-tab="applications" role="tab">Applications</button>
+      <button class="tab" data-tab="phd" role="tab">PhD</button>
       <button class="tab" data-tab="interview" role="tab">Interview prep</button>
       <button class="tab" data-tab="linkedin" role="tab">LinkedIn</button>
       <button class="tab" data-tab="memory" role="tab">Memory</button>
@@ -266,6 +267,39 @@
         <div id="app-list" class="app-list"></div>
       </section>
 
+      <section id="tab-phd" class="panel" hidden>
+        <div class="phd">
+          <div class="phd-intro">
+            <h2>Apply for a PhD</h2>
+            <p class="hint">Three steps: get your academic CV right, then email professors and apply. Everything here uses your memory, so fix something once and every CV and email gets it.</p>
+          </div>
+
+          <section class="card phd-step">
+            <div class="step-head"><span class="step-num">1</span><div><h3>Your academic CV</h3>
+              <p class="hint">What PhD committees look for. Fix what's missing; optional items only if you have them.</p></div>
+              <span id="phd-score" class="phd-score"></span></div>
+            <div id="phd-checks" class="phd-checks"></div>
+            <div class="row">
+              <button id="phd-review" type="button" title="Suggested fixes to your memory; nothing changes until you accept them">Review my memory</button>
+            </div>
+          </section>
+
+          <section class="card phd-step">
+            <div class="step-head"><span class="step-num">2</span><div><h3>Your PhD CV</h3>
+              <p class="hint">Education first, research interests, research experience with your PIs, publications, teaching, awards and references. Use it for professors and programmes; each application can also get its own tailored copy.</p></div></div>
+            <div id="phd-cv" class="row wrap"></div>
+          </section>
+
+          <section class="card phd-step">
+            <div class="step-head"><span class="step-num">3</span><div><h3>Email professors and apply</h3>
+              <p class="hint">Find a professor, read their papers, and draft a first email. Each professor becomes a PhD application with its own tailored CV, statement of purpose and interview prep.</p></div></div>
+            <div class="row"><button id="phd-email" type="button" class="primary">Email a professor</button>
+              <button id="phd-programme" type="button">Apply to a programme</button></div>
+            <div id="phd-apps" class="phd-apps"></div>
+          </section>
+        </div>
+      </section>
+
       <section id="tab-interview" class="panel" hidden>
         <div class="toolbar">
           <span id="prep-for" class="edit-status"></span>
@@ -356,5 +390,6 @@
   <script src="/static/compare.js"></script>
   <script src="/static/extras.js"></script>
   <script src="/static/review.js"></script>
+  <script src="/static/phd.js"></script>
 </body>
 </html>

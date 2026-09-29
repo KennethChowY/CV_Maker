@@ -126,6 +126,20 @@ It can use either:
   asks up to six specific questions about your own work (mostly the numbers
   behind it: how many users, samples, hours saved). Answer the ones you can and
   they go into your memory. It works without an AI model too, with simpler questions.
+- **PhD tab.** Everything for applying to PhDs in one place, in three steps.
+  **1. Your academic CV:** a checklist of what committees look for (research
+  interests, research experience, the PI named on each research role, your
+  final-year project, GPA and coursework, publications and posters, 2–3
+  referees, contact links), each with a quick **Fix** form. **2. Your PhD CV:**
+  one click creates it: Research Interests at the top, Education, Research
+  Experience with "PI: …" under each role, Publications & Presentations as
+  citations with your name in bold ("under review" and "in preparation" marked
+  honestly), Teaching, Awards, Service, other projects, Skills and References
+  (left off US applications, which collect letters separately). Open it,
+  download the PDF, or rebuild it after updating your memory. **3. Email
+  professors and apply:** find a professor and draft an email, or apply to a
+  programme; each becomes a PhD application with its own tailored CV,
+  statement of purpose and interview prep, listed here with follow-up reminders.
 - **PhD applications.** In **New application**, choose *A PhD, master's by
   research or research position*. You get an academic CV (Education first, then
   Research Experience, Publications & Presentations, Teaching Experience, Awards &

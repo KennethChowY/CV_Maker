@@ -149,3 +149,56 @@ def test_academic_cv_places_thesis_research_projects_and_service():
     # A thesis already labelled isn't labelled twice.
     m.education[0].thesis = "Honours thesis: Air pollution"
     assert assemble_cv(m).sections[1].entries[0].bullets[0] == "Honours thesis: Air pollution"
+
+
+def test_phd_cv_has_research_interests_pi_citations_and_references():
+    from cv_maker.render import assemble_cv, citation, render_cv
+    from cv_maker.schema import Achievement, Experience, Memory, Referee
+
+    m = Memory(
+        profile={"name": "Kenneth Chow"},
+        research_interests=["Exposome data science", "Environmental epidemiology"],
+        experience=[Experience(id="a", role="Research Assistant", organization="C-FIST Lab, CUHK", kind="research",
+                               supervisor="Prof. Jane Wong", start="2025-07", end="Present")],
+        achievements=[
+            Achievement(id="p", kind="publication", title="Exposome-wide association of X", issuer="Environ Int",
+                        date="2025", authors="Wong J, Chow K, Lee A", status="published"),
+            Achievement(id="q", kind="publication", title="Carbon fingerprints", authors="K. Chow and J. Wong",
+                        status="in preparation"),
+            Achievement(id="t", kind="talk", title="Poster: ExWAS in R Shiny", issuer="ISEE 2025", date="2025-08",
+                        authors="Chow K")],
+        referees=[Referee(id="r", name="Prof. Jane Wong", title="Associate Professor", organization="CUHK",
+                          email="jane@cuhk.edu.hk", relationship="Supervisor, C-FIST Lab")])
+    cv = assemble_cv(m, academic=True)
+    assert cv.summary_title == "Research Interests"
+    assert cv.summary == "Exposome data science · Environmental epidemiology"
+    research = next(s for s in cv.sections if s.heading == "Research Experience")
+    assert research.entries[0].subtitle == "C-FIST Lab, CUHK · PI: Prof. Jane Wong"
+    pubs = next(s for s in cv.sections if s.heading.startswith("Publications")).items
+    assert "Wong J, **Chow K**, Lee A (2025). Exposome-wide association of X. Environ Int." in pubs
+    assert "**K. Chow** and J. Wong (in preparation). Carbon fingerprints." in pubs
+    assert "**Chow K** (2025). ExWAS in R Shiny. Poster at ISEE 2025." in pubs
+    assert cv.sections[-1].heading == "References"
+    assert cv.sections[-1].items == ["Prof. Jane Wong, Associate Professor, CUHK — jane@cuhk.edu.hk — Supervisor, C-FIST Lab"]
+    html = render_cv(cv)
+    assert "<h2>Research Interests</h2>" in html and "<strong>Chow K</strong>" in html
+    # No references when asked (US), and job CVs are unchanged.
+    assert "References" not in [s.heading for s in assemble_cv(m, academic=True, references=False).sections]
+    job = assemble_cv(m)
+    assert job.summary_title == "" and "References" not in [s.heading for s in job.sections]
+    assert job.sections[0].entries[0].subtitle == "C-FIST Lab, CUHK"
+    # Without authors, papers keep the simple format.
+    assert citation(m.achievements[0], "") .startswith("Wong J, Chow K")
+
+
+def test_small_academic_fixes():
+    from cv_maker.render import assemble_cv, citation, pretty_date
+    from cv_maker.schema import Achievement, Education, Memory
+
+    assert pretty_date("currently") == "Present" and pretty_date("Currently.") == "Present"
+    paper = Achievement(title="X", authors="Chow K", date="2025", status="under review")
+    assert citation(paper, "Kenneth Chow") == "**Chow K** (under review). X."
+    m = Memory(education=[Education(id="e", institution="UCLA", qualification="BS", thesis="Exposome pipeline",
+                                    highlights=["Capstone: exposome data pipeline", "Dean's list"])])
+    assert assemble_cv(m, academic=True).sections[0].entries[0].bullets == \
+        ["Final-year project: Exposome pipeline", "Dean's list"]

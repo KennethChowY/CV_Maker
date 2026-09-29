@@ -58,6 +58,7 @@ class Experience(BaseModel):
     location: str = ""
     start: str = Field("", description="As precise as known, e.g. '2021-03' or '2021'")
     end: str = Field("", description="'Present' if ongoing, otherwise like start")
+    supervisor: str = Field("", description="PI or supervisor for research roles, e.g. 'Prof. Jane Wong'")
     description: str = ""
     highlights: list[str] = Field(
         default_factory=list,
@@ -103,9 +104,22 @@ class Achievement(BaseModel):
     id: str = ""
     kind: str = Field("award", description="certification | award | publication | talk | service | other")
     title: str = ""
-    issuer: str = ""
+    issuer: str = Field("", description="Issuer, or for papers and talks the journal, conference or venue")
     date: str = ""
+    authors: str = Field("", description="For papers and talks: the author list as in a citation, e.g. 'Chow K, Wong J'")
+    status: str = Field("", description="For papers: published | accepted | under review | in preparation")
+    link: str = Field("", description="DOI or link")
     description: str = ""
+
+
+class Referee(BaseModel):
+    id: str = ""
+    name: str = Field("", description="e.g. 'Prof. Jane Wong'")
+    title: str = Field("", description="e.g. 'Associate Professor, JC School of Public Health'")
+    organization: str = ""
+    email: str = ""
+    phone: str = ""
+    relationship: str = Field("", description="How they know the person, e.g. 'Supervisor, C-FIST Lab (2025–)'")
 
 
 class Memory(BaseModel):
@@ -116,6 +130,8 @@ class Memory(BaseModel):
     projects: list[Project] = Field(default_factory=list)
     skills: list[SkillGroup] = Field(default_factory=list)
     achievements: list[Achievement] = Field(default_factory=list)
+    research_interests: list[str] = Field(default_factory=list, description="Research interests, short keywords")
+    referees: list[Referee] = Field(default_factory=list, description="People who will write references")
     languages: list[str] = Field(default_factory=list, description="Spoken languages with level")
     interests: list[str] = Field(default_factory=list)
     preferences: list[str] = Field(
@@ -163,6 +179,7 @@ class CVDocument(BaseModel):
     contact: list[str] = Field(default_factory=list, description="Email, phone, location as display strings")
     links: list[Link] = Field(default_factory=list)
     summary: str = ""
+    summary_title: str = Field("", description="Heading for the summary; empty means 'Summary'")
     sections: list[CVSection] = Field(default_factory=list)
     advice: list[str] = Field(
         default_factory=list,

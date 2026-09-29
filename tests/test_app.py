@@ -34,13 +34,13 @@ class FakeAI:
         return CoverLetter(paragraphs=[f"I'd like to join {company or 'your team'} as {role or 'an engineer'}.",
                                        "At Acme I built X for 3 teams."])
 
-    def build_cv(self, memory, target="", conventions="", academic=False):
+    def build_cv(self, memory, target="", conventions="", academic=False, references=True):
         self.targets.append(target)
         self.conventions = conventions
         self.academic = academic
         if academic:
             from cv_maker.render import assemble_cv
-            return assemble_cv(memory, academic=True)
+            return assemble_cv(memory, academic=True, references=references)
         return CVDocument(
             name=memory.profile.name or "Nobody",
             sections=[CVSection(heading="Experience", entries=[
@@ -301,7 +301,7 @@ def test_section_layout_is_saved_and_survives_rebuilds(client, ai):
         "profile": {"name": "Ada"}, "experience": [{"id": "x", "role": "Engineer"}],
         "skills": [{"category": "Languages", "skills": ["Python"]}],
     })
-    ai.build_cv = lambda memory, target="", conventions="", academic=False: CVDocument(name="Ada", sections=[
+    ai.build_cv = lambda memory, target="", conventions="", academic=False, references=True: CVDocument(name="Ada", sections=[
         CVSection(heading="Experience", items=["job"]), CVSection(heading="Skills", items=["Python"]),
     ])
     client.post("/api/build", json={})

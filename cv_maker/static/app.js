@@ -93,6 +93,7 @@ function render(next) {
   renderApplications();
   if (typeof renderLetter === "function") renderLetter();
   if (typeof renderExtras === "function") renderExtras();
+  if (typeof renderPhd === "function") renderPhd();
   renderMemory();
   renderHistory();
 }
@@ -150,8 +151,9 @@ function applyPageSize(size) {
 const SECTION_LABELS = {
   experience: "Experience", education: "Education", projects: "Projects",
   achievements: "Publications, awards, certifications & service",
+  referees: "Referees",
 };
-const ADD_LABELS = { experience: "job or role", education: "school or degree", projects: "project", achievements: "publication, award, service…" };
+const ADD_LABELS = { experience: "job or role", education: "school or degree", projects: "project", achievements: "publication, award, service…", referees: "referee" };
 
 // [field, label, type, options/placeholder]. type: text (default), select, textarea, lines, csv
 const FIELDS = {
@@ -159,6 +161,7 @@ const FIELDS = {
     ["role", "Job title"], ["organization", "Organisation (company, lab, department)"],
     ["kind", "Type", "select", ["work", "internship", "research", "teaching", "volunteering", "freelance", "other"]],
     ["location", "Location"], ["start", "Start", "text", "e.g. 2024-07"], ["end", "End", "text", "e.g. 2025-06 or Present"],
+    ["supervisor", "PI or supervisor (research roles)", "text", "e.g. Prof. Jane Wong"],
     ["description", "Short description", "textarea"],
     ["highlights", "What you did and achieved (one per line)", "lines"],
     ["skills", "Skills and tools used (comma separated)", "csv"],
@@ -182,7 +185,15 @@ const FIELDS = {
   achievements: [
     ["title", "Title"], ["kind", "Type", "select", ["publication", "talk", "certification", "award", "service", "other"]],
     ["issuer", "Issuer, journal or venue"], ["date", "Date", "text", "e.g. 2025-03"],
+    ["authors", "Authors, for papers and talks", "text", "e.g. Wong J, Chow K, Lee A"],
+    ["status", "Status, for papers", "select", ["", "published", "accepted", "under review", "in preparation"]],
+    ["link", "DOI or link", "text", "e.g. 10.1016/j.envint.2025.01.001"],
     ["description", "Description", "textarea"],
+  ],
+  referees: [
+    ["name", "Name", "text", "e.g. Prof. Jane Wong"], ["title", "Position", "text", "e.g. Associate Professor"],
+    ["organization", "Department and university"], ["email", "Email"], ["phone", "Phone (optional)"],
+    ["relationship", "How they know you", "text", "e.g. Supervisor, C-FIST Lab (2025–)"],
   ],
 };
 const PROFILE_FIELDS = [
@@ -192,6 +203,7 @@ const PROFILE_FIELDS = [
   ["summary", "Your own summary (optional)", "textarea"],
 ];
 const LIST_SECTIONS = [
+  ["research_interests", "Research interests", "One per line, e.g. Exposome data science"],
   ["skills", "Skills", "One group per line, e.g. Programming: Python, R, SQL"],
   ["languages", "Languages", "One per line, e.g. Cantonese (native)"],
   ["interests", "Interests", "One per line"],
@@ -205,7 +217,7 @@ function itemView(section, item) {
   switch (section) {
     case "experience":
       return { title: [item.role, item.organization].filter(Boolean).join(" · "),
-               meta: [item.kind !== "work" ? item.kind : "", item.location, dates(item)].filter(Boolean).join(" · "),
+               meta: [item.kind !== "work" ? item.kind : "", item.supervisor ? `PI: ${item.supervisor}` : "", item.location, dates(item)].filter(Boolean).join(" · "),
                bullets: item.highlights };
     case "education":
       return { title: [item.qualification, item.field].filter(Boolean).join(", ") || item.institution,
@@ -214,8 +226,11 @@ function itemView(section, item) {
     case "projects":
       return { title: item.name, meta: [item.role, dates(item), item.link].filter(Boolean).join(" · "),
                bullets: [item.description, ...item.highlights].filter(Boolean) };
+    case "referees":
+      return { title: item.name, meta: [item.title, item.organization, item.email].filter(Boolean).join(" · "),
+               bullets: item.relationship ? [item.relationship] : [] };
     default:
-      return { title: item.title, meta: [item.kind, item.issuer, item.date].filter(Boolean).join(" · "),
+      return { title: item.title, meta: [item.kind, item.authors, item.issuer, item.date, item.status].filter(Boolean).join(" · "),
                bullets: item.description ? [item.description] : [] };
   }
 }
@@ -248,7 +263,7 @@ function fieldInput([name, label, type = "text", extra], value) {
   if (type === "select") {
     input = el("select");
     const options = extra.includes(value) || !value ? extra : [value, ...extra];
-    options.forEach((o) => input.append(new Option(o, o)));
+    options.forEach((o) => input.append(new Option(o || "—", o)));
     input.value = value || extra[0];
   } else if (type === "textarea" || type === "lines") {
     input = el("textarea");

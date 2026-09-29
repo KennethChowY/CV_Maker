@@ -16,7 +16,7 @@ from markupsafe import Markup, escape
 from .schema import CVDocument, CVEntry, CVSection, Memory
 
 _MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
-_ONGOING = {"present", "now", "current", "ongoing", "today"}
+_ONGOING = {"present", "now", "current", "currently", "ongoing", "today", "to date"}
 
 # Unfilled template gaps like "[month year]" or "[N replays]", but not labels like "[Programming]".
 PLACEHOLDER = re.compile(
@@ -30,14 +30,28 @@ _DEGREE = re.compile(
 )
 
 
+_BOLD = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _bold(text: str) -> Markup:
+    """Escape text, turning **name** into bold (used for the person's own name in citations)."""
+    out, last = [], 0
+    for m in _BOLD.finditer(text):
+        out.append(escape(text[last:m.start()]))
+        out.append(Markup("<strong>{}</strong>").format(m.group(1)))
+        last = m.end()
+    out.append(escape(text[last:]))
+    return Markup("").join(out)
+
+
 def _mark_placeholders(text: str) -> Markup:
     """Escape text and highlight unfilled placeholders so they're easy to spot on screen."""
     out, last = [], 0
     for m in PLACEHOLDER.finditer(text):
-        out.append(escape(text[last:m.start()]))
+        out.append(_bold(text[last:m.start()]))
         out.append(Markup('<mark class="placeholder">{}</mark>').format(m.group(0)))
         last = m.end()
-    out.append(escape(text[last:]))
+    out.append(_bold(text[last:]))
     return Markup("").join(out)
 
 
@@ -93,7 +107,8 @@ def with_photo(html: str, photo: str | None) -> str:
 def section_list(cv: CVDocument, order: list[str] = (), hidden: list[str] = ()) -> list[dict]:
     """The CV's sections in display order, for the section arranger on the page."""
     hidden_keys = {h.strip().lower() for h in hidden}
-    rows = [{"key": "summary", "heading": "Summary", "hidden": "summary" in hidden_keys, "fixed": True}] \
+    rows = [{"key": "summary", "heading": cv.summary_title or "Summary", "hidden": "summary" in hidden_keys,
+             "fixed": True}] \
         if cv.summary else []
     for sec in order_sections(cv, list(order)).sections:
         key = sec.heading.strip().lower()
@@ -120,7 +135,7 @@ def date_key(value: str) -> tuple[int, int]:
     text = value.strip().lower()
     if not text:
         return (0, 0)
-    if text in _ONGOING:
+    if text.rstrip(".") in _ONGOING:
         return (9999, 12)
     year = re.search(r"(19|20)\d{2}", text)
     if not year:
@@ -137,7 +152,7 @@ def date_key(value: str) -> tuple[int, int]:
 def pretty_date(value: str) -> str:
     """'2021-03' -> 'Mar 2021'; other formats are left as written."""
     value = value.strip()
-    if value.lower() in _ONGOING:
+    if value.lower().rstrip(".") in _ONGOING:
         return "Present"
     m = re.fullmatch(r"((?:19|20)\d{2})[-/.](\d{1,2})(?:[-/.]\d{1,2})?", value)
     if m and 1 <= int(m.group(2)) <= 12:
@@ -156,10 +171,53 @@ def _newest_first(items: list) -> list:
     return sorted(items, key=lambda x: (date_key(x.end or x.start), date_key(x.start)), reverse=True)
 
 
+def _own_name(authors: str, name: str) -> str:
+    """Bold the person's own name in an author list ('Chow K', 'K. Chow', 'Kenneth Chow')."""
+    words = [w for w in re.findall(r"[A-Za-z][A-Za-z'-]+", name) if len(w) > 1]
+    if not words:
+        return authors
+    surname = words[-1]
+    parts = re.split(r"(,\s*|;\s*|\s+and\s+|\s*&\s*)", authors)
+    return "".join(f"**{p.strip()}**" if re.search(rf"\b{re.escape(surname)}\b", p, re.I) and p.strip() else p
+                   for p in parts)
+
+
+def citation(a, name: str = "") -> str:
+    """A paper, poster or talk as a citation, with the person's own name in bold."""
+    year = date_key(a.date)[0] if a.date else 0
+    status = a.status.strip().lower()
+    when = f"({year})" if year and status not in ("in preparation", "under review") else f"({status or 'n.d.'})"
+    kind = a.kind.strip().lower()
+    venue = a.issuer.strip()
+    title = a.title.strip()
+    labelled = re.match(r"(poster|talk|presentation)\s*[:\-–]\s*", title, re.I)
+    if labelled:  # "Poster: X" -> "X. Poster at <venue>."
+        kind, title = labelled.group(1).lower(), title[labelled.end():]
+    if kind in ("talk", "presentation", "poster") and venue:
+        venue = f"{'Poster' if kind == 'poster' else 'Talk'} at {venue}"
+    parts = [f"{_own_name(a.authors.strip(), name)} {when}.", f"{title.rstrip('.')}."]
+    if venue:
+        parts.append(f"{venue.rstrip('.')}.")
+    if status == "accepted":
+        parts.append("Accepted.")
+    if a.link.strip():
+        parts.append(a.link.strip())
+    return " ".join(parts)
+
+
+def referee_line(r) -> str:
+    who = ", ".join(x for x in (r.name, r.title, r.organization) if x)
+    how = " · ".join(x for x in (r.email, r.phone) if x)
+    return " — ".join(x for x in (who, how, r.relationship) if x)
+
+
+_THESIS_LINE = re.compile(r"(final[- ]year project|fyp|capstone|senior thesis|honou?rs thesis|thesis|dissertation)"
+                          r"\b\s*[:\-–—]", re.I)
+
 ACADEMIC_ORDER = ["Education", "Research Experience", "Research Projects", "Publications & Presentations",
                   "Teaching Experience", "Awards & Scholarships", "Professional Service", "Projects",
                   "Other Projects", "Other Experience", "Experience",
-                  "Volunteering", "Skills", "Certifications", "Achievements", "Languages", "Interests"]
+                  "Volunteering", "Skills", "Certifications", "Achievements", "Languages", "Interests", "References"]
 _RESEARCH = re.compile(r"research|\blab\b|laborator|\bRA\b|thesis|scientist|fellow", re.I)
 _TEACHING = re.compile(r"teaching|tutor|\bTA\b|lecturer|instructor|demonstrator|grader", re.I)
 
@@ -182,6 +240,7 @@ def assemble_cv(
     skills: list[str] | None = None,
     advice: list[str] | None = None,
     academic: bool = False,
+    references: bool = True,
 ) -> CVDocument:
     """Lay out the memory as a CV. Optional arguments replace wording (by item id) or hide items.
     `academic` lays it out for PhD and research applications: education first, then research
@@ -198,11 +257,20 @@ def assemble_cv(
     jobs = [e for e in _newest_first(memory.experience) if keep(e) and e.kind != "volunteering"]
     volunteering = [e for e in _newest_first(memory.experience) if keep(e) and e.kind == "volunteering"]
 
+    def organisation(e) -> str:
+        """On academic CVs, research roles name the PI: committees often know them."""
+        org = e.organization if e.role else ""
+        sup = e.supervisor.strip()
+        if academic and sup:
+            sup = sup if re.match(r"(pi|supervisor|advis[eo]r)\b", sup, re.I) else f"PI: {sup}"
+            return " · ".join(x for x in (org, sup) if x)
+        return org
+
     def experience_section(heading: str, items) -> CVSection:
         return CVSection(heading=heading, entries=[
             CVEntry(
                 title=e.role or e.organization,
-                subtitle=e.organization if e.role else "",
+                subtitle=organisation(e),
                 location=e.location,
                 dates=date_range(e.start, e.end),
                 description="" if bullets.get(e.id) else e.description,
@@ -231,7 +299,7 @@ def assemble_cv(
         if thesis:  # one line under the degree, whatever the AI wrote for the other details
             labelled = re.match(r"(thesis|dissertation|capstone|final[- ]year|honou?rs|senior)\b", thesis, re.I)
             details = [thesis if labelled else f"Final-year project: {thesis}"] + \
-                      [d for d in details if thesis.lower() not in d.lower()]
+                      [d for d in details if thesis.lower() not in d.lower() and not _THESIS_LINE.match(d.strip())]
         grade = e.grade.strip()
         if grade and re.fullmatch(r"[\d.]+\s*/\s*[\d.]+", grade):
             grade = f"GPA {grade}"
@@ -296,7 +364,8 @@ def assemble_cv(
         placed |= {id(a) for a in members}
         if members:
             sections.append(CVSection(heading=heading, items=[
-                " — ".join(x for x in (a.title, a.issuer, pretty_date(a.date)) if x) for a in members
+                citation(a, p.name) if heading.startswith("Publications") and a.authors.strip()
+                else " — ".join(x for x in (a.title, a.issuer, pretty_date(a.date)) if x) for a in members
             ]))
     others = [a for a in achievements if id(a) not in placed]
     if others:
@@ -308,6 +377,8 @@ def assemble_cv(
     if memory.interests:
         sections.append(CVSection(heading="Interests", items=[", ".join(memory.interests)]))
 
+    if academic and references and memory.referees:
+        sections.append(CVSection(heading="References", items=[referee_line(r) for r in memory.referees if r.name]))
     if academic:
         if research or research_projects:
             section = experience_section("Research Experience", research)
@@ -323,20 +394,23 @@ def assemble_cv(
         rank = {h: i for i, h in enumerate(ACADEMIC_ORDER)}
         sections.sort(key=lambda s: rank.get(s.heading, len(rank)))  # stable: unknown sections keep their order
 
+    if academic:  # a line of research interests instead of a sales-pitch summary
+        summary = summary or " · ".join(memory.research_interests)
     return CVDocument(
         name=p.name or "Your Name",
         headline=headline or p.headline,
         contact=[x for x in (p.email, p.phone, p.location) if x],
         links=p.links,
-        summary=summary or memory.summary,
+        summary_title="Research Interests" if academic else "",
+        summary=summary or ("" if academic else memory.summary),
         sections=sections,
         advice=advice or [],
     )
 
 
-def basic_cv(memory: Memory, academic: bool = False) -> CVDocument:
+def basic_cv(memory: Memory, academic: bool = False, references: bool = True) -> CVDocument:
     """The memory laid out without any AI polishing."""
-    cv = assemble_cv(memory, academic=academic)
+    cv = assemble_cv(memory, academic=academic, references=references)
     cv.advice = ["Choose an AI model to have your CV's wording polished and tailored."]
     return cv
 

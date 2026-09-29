@@ -27,7 +27,7 @@ from pathlib import Path
 
 from .schema import CVDocument, Memory
 
-_SECTIONS_WITH_IDS = ("experience", "education", "projects", "achievements")
+_SECTIONS_WITH_IDS = ("experience", "education", "projects", "achievements", "referees")
 GENERAL = "general"
 STATUSES = ("Draft", "Applied", "Interview", "Offer", "Rejected", "Withdrawn")
 _VERSION_FIELDS = ("company", "role", "name", "target", "link", "status", "applied", "notes",
