@@ -68,10 +68,23 @@ def test_professor_email_uses_their_papers(tmp_path, openalex):
     assert chosen["name"] == "Jane Wong"
     assert c.get(f"/api/versions/{vid}/professor").get_json()["professor"]["id"] == "A222"
     assert c.get("/api/state").get_json()["versions"][0]["supervisor"] == "Jane Wong"
-    c.post(f"/api/versions/{vid}/supervisor-email")
+    email = c.post(f"/api/versions/{vid}/supervisor-email", json={"interest": "Air pollution and health"}).get_json()
     about, university, programme, supervisor = ai.supervisor_args
     assert "Exposome-wide association of air pollution" in about and supervisor == "Jane Wong"
+    assert email["fit"] == "partial" and email["paper"] == "A paper" and email["overlap"] == "Both use R"
+    # What draws the student to them is remembered for rewrites, alongside a one-off instruction.
+    c.post(f"/api/versions/{vid}/supervisor-email", json={"instruction": "Shorter"})
+    assert ai.supervisor_extra == ("Air pollution and health", "Shorter")
     assert c.post("/api/versions/general/professor", json={"id": "A222"}).status_code == 404
+
+
+def test_supervisor_prompt_is_honest_about_fit():
+    from cv_maker.assistant import SupervisorEmail, supervisor_prompt
+    system, user = supervisor_prompt("{}", "papers", "CUHK", "PhD", "Jane Wong", "air pollution", "shorter")
+    assert "aligns with" in system and "Never use" in system  # banned stock phrases
+    assert "air pollution" in user and "shorter" in system
+    fields = list(SupervisorEmail.model_fields)
+    assert fields.index("fit") < fields.index("body") and fields.index("paper") < fields.index("body")
 
 
 def test_usage_is_summarised_with_costs(tmp_path):

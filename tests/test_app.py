@@ -74,10 +74,12 @@ class FakeAI:
         self.follow_up_args = (company, role, days, notes)
         return Email(subject=f"{role} application", body=f"Dear {company}, it's been {days} days.")
 
-    def supervisor_email(self, memory, target, university, programme, supervisor=""):
-        from cv_maker.assistant import Email
+    def supervisor_email(self, memory, target, university, programme, supervisor="", interest="", instruction=""):
+        from cv_maker.assistant import SupervisorEmail
         self.supervisor_args = (target, university, programme, supervisor)
-        return Email(subject="Prospective PhD student", body=f"Dear {supervisor or 'Professor'},")
+        self.supervisor_extra = (interest, instruction)
+        return SupervisorEmail(subject="Prospective PhD student", body=f"Dear {supervisor or 'Professor'},",
+                               fit="Partial", paper="A paper", overlap="Both use R")
 
     def linkedin(self, memory, target=""):
         from cv_maker.assistant import LinkedInProfile, LinkedInRole

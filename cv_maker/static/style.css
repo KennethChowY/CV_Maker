@@ -404,3 +404,8 @@ button.person .hint { margin: 2px 0 0; }
 .usage-table th, .usage-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
 .usage-table th:not(:first-child), .usage-table td:not(:first-child) { text-align: right; }
 .usage-table tr.total td { font-weight: 600; border-bottom: none; }
+.fit-note { border-radius: 8px; padding: 8px 10px; font-size: 13px; display: grid; gap: 3px; }
+.fit-note.strong { background: #e8f5ee; color: #12603f; }
+.fit-note.partial { background: var(--accent-soft); color: var(--ink); }
+.fit-note.weak { background: var(--warn-bg); color: var(--warn-ink); }
+.rewrite input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }

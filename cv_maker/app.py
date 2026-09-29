@@ -700,14 +700,22 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         if vid == GENERAL or not store.has_version(vid):
             return error("That application no longer exists.", 404)
         ai = need_ai()
+        body = request.get_json(silent=True) or {}
         info = store.version_info(vid)
         professor = store.load_doc("professor", vid)
+        interest = str(body.get("interest", professor.get("interest", "")))[:1500]
+        if professor and interest != professor.get("interest", ""):
+            store.save_doc("professor", {**professor, "interest": interest}, vid)  # remembered for rewrites
         about = info["target"]
         if professor.get("name"):
             about = f"{about}\n\n<their_research source=\"OpenAlex\">\n{profile_text(professor)}\n</their_research>".strip()
         email = ai.supervisor_email(store.load_memory(), about, info["company"], info["role"],
-                                    info["supervisor"] or professor.get("name", ""))
-        return jsonify({"subject": email.subject, "body": email.body})
+                                    info["supervisor"] or professor.get("name", ""), interest,
+                                    str(body.get("instruction", ""))[:500])
+        fit = email.fit.strip().lower()
+        return jsonify({"subject": email.subject, "body": email.body, "paper": email.paper,
+                        "overlap": email.overlap, "their_focus": email.their_focus,
+                        "fit": fit if fit in ("strong", "partial", "weak") else ""})
 
     @app.post("/api/job-ad")
     def job_ad():

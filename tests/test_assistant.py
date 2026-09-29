@@ -193,7 +193,7 @@ def test_phd_application_gets_an_academic_cv_statement_and_supervisor_email(clie
     client.post("/api/interview")
     assert ai.prep_kind == "phd"
     email = client.post(f"/api/versions/{vid}/supervisor-email").get_json()
-    assert email == {"subject": "Prospective PhD student", "body": "Dear Prof. Wong,"}
+    assert (email["subject"], email["body"], email["fit"]) == ("Prospective PhD student", "Dear Prof. Wong,", "partial")
     assert ai.supervisor_args == ("Exposome lab", "CUHK", "PhD in Epidemiology", "Prof. Wong")
 
 

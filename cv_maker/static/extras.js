@@ -331,16 +331,37 @@ async function draftFollowUp(v) {
               { label: "Mark as sent", primary: true, onClick: () => updateApplication(v.id, { followed_up: today() }) });
 }
 
-async function draftSupervisorEmail(v) {
+const FIT_NOTES = {
+  strong: "Good match: their research is close to your own work.",
+  partial: "Partial match: you share methods or questions, but not the field. The email says honestly what you'd bring and what you want to learn.",
+  weak: "Weak match: their research is quite far from your experience, so the email can't honestly claim a close link. Check it's the right person, tell the app what draws you to their work, or consider a professor closer to what you've done.",
+};
+
+async function draftSupervisorEmail(v, options = {}) {
   const email = await withBusy(busyText("Drafting an email to your potential supervisor…"),
-                               () => api("POST", `/api/versions/${v.id}/supervisor-email`));
+                               () => api("POST", `/api/versions/${v.id}/supervisor-email`, options));
   if (!email) return;
+  const notes = [];
+  if (email.fit) {
+    const fit = el("div", `fit-note ${email.fit}`);
+    fit.append(el("strong", "", FIT_NOTES[email.fit]));
+    if (email.overlap) fit.append(el("div", "", `The link: ${email.overlap}`));
+    if (email.paper) fit.append(el("div", "", `Paper it mentions: “${email.paper}”`));
+    notes.push(fit);
+  }
+  const instruction = el("input");
+  instruction.placeholder = "Change something? e.g. \"warmer\", \"mention I want to learn MRI methods\", \"use a different paper\"";
+  const rewrite = el("div", "rewrite");
+  rewrite.append(instruction);
   emailDialog(`Email to a potential supervisor: ${v.name}`, email,
-              "Fill in anything in [square brackets], attach your academic CV (Download PDF on the CV tab), and send it from your university email if you have one. If there's no reply in two weeks, one polite follow-up is fine.",
-              { label: "Done", primary: true });
+              "Read it through and make it yours: fill in anything in [square brackets], attach your academic CV (Download PDF on the CV tab), and send it from your university email if you have one. If there's no reply in two weeks, one polite follow-up is fine.",
+              { label: "Done", primary: true },
+              { before: notes, after: [rewrite],
+                extra: { label: "Rewrite", title: "Write a new draft, following your instruction if you gave one",
+                         onClick: () => { $("modal").close(); draftSupervisorEmail(v, { instruction: instruction.value }); return false; } } });
 }
 
-function emailDialog(title, email, tipText, finalAction) {
+function emailDialog(title, email, tipText, finalAction, more = {}) {
   const subject = el("input");
   subject.value = email.subject;
   const body = el("textarea");
@@ -348,7 +369,8 @@ function emailDialog(title, email, tipText, finalAction) {
   body.value = email.body;
   const field = (label, input) => { const l = el("label", "field"); l.append(el("span", "field-label", label), input); return l; };
   const tip = el("p", "hint", tipText);
-  openModal(title, [field("Subject", subject), field("Email", body), tip], [
+  openModal(title, [...(more.before || []), field("Subject", subject), field("Email", body), ...(more.after || []), tip], [
+    ...(more.extra ? [more.extra] : []),
     { label: "Copy", onClick: (e) => { copyText(`Subject: ${subject.value}\n\n${body.value}`, e.currentTarget); return false; } },
     {
       label: "Open in my email app",
@@ -393,13 +415,20 @@ function showProfessor(v, prof) {
   a.href = prof.source;
   a.target = "_blank";
   a.rel = "noopener";
-  src.append("From ", a, ", an open index of academic papers. The email will mention one of these papers and connect it to your own work.");
+  src.append("From ", a, ", an open index of academic papers. Not who you meant? Search again.");
   body.push(src);
+  const interest = el("textarea");
+  interest.rows = 3;
+  interest.value = prof.interest || "";
+  interest.placeholder = "e.g. Their air-pollution cohort work: I'd like to apply exposome-wide methods to it, and learn how they handle exposure measurement error.";
+  const interestField = el("label", "field");
+  interestField.append(el("span", "field-label", "What draws you to their work? Optional, but it's what makes the email sound like you."), interest);
+  body.push(interestField);
   if (!state.ai_enabled) body.push(el("p", "hint warn", "Choose an AI model in the top-left box to draft the email."));
   openModal(`Email a professor: ${v.name}`, body, [
     { label: "Search again", onClick: () => { professorSearch(v, prof.name); return false; } },
     { label: "Draft the email", primary: true, disabled: !state.ai_enabled,
-      onClick: () => { $("modal").close(); draftSupervisorEmail(v); return false; } },
+      onClick: () => { $("modal").close(); draftSupervisorEmail(v, { interest: interest.value }); return false; } },
   ]);
 }
 

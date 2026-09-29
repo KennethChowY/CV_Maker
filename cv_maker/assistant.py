@@ -206,30 +206,75 @@ def follow_up_prompt(memory_json: str, company: str, role: str, days: int, notes
             f"<memory>\n{memory_json}\n</memory>\n\nCompany: {company or 'not given'}\nRole: {role or 'not given'}")
 
 
-SUPERVISOR_SYSTEM = """\
-Write a short first email from a prospective PhD student to a potential supervisor. At most 200
-words. Busy academics skim, so:
-- `subject`: specific, e.g. "Prospective PhD student: exposome data science (UCLA Data Theory graduate)".
-- Open with who they are in one sentence (degree, university, current research role).
-- One or two sentences connecting their experience to the supervisor's research. Use only what the
-  given description of the supervisor's work says. If their papers are listed, name ONE specific,
-  recent paper by its title and say briefly what about it connects to the student's own work;
-  don't claim to have read more than the title and abstract show. If nothing is given, write a
-  gap in square brackets like [one specific paper or project of theirs] for the person to fill in.
-- Their one or two most relevant research experiences, with a concrete detail or number.
-- Ask whether the supervisor is taking new PhD students for the coming year, and mention the
-  attached CV. Sign off with their name. No flattery, no cliches.
+class SupervisorEmail(BaseModel):
+    """Filled in order: the model judges the fit and picks the paper before it writes."""
+    their_focus: str = Field("", description="One plain sentence: what this professor's research is about")
+    overlap: str = Field("", description="The most genuine link between the student's real experience and "
+                                         "this research, in one sentence; say plainly if there is little")
+    fit: str = Field("", description="strong | partial | weak")
+    paper: str = Field("", description="Exact title of the ONE paper the email mentions")
+    subject: str = ""
+    body: str = ""
 
+
+SUPERVISOR_SYSTEM = """\
+You help a prospective PhD student write a first email to a professor they'd like to work with.
+Professors get many generic emails and ignore the ones that could have been sent to anyone. A good
+one is short, specific and honest: it shows the student has thought about this professor's work,
+and gives one concrete reason they'd be a useful student.
+
+Think first, filling these fields before writing:
+- `their_focus`: what the professor's research is about, judging from their papers and topics.
+- `overlap`: the most genuine link between the student's REAL experience (from the memory) and that
+  research: a shared question, data type, method or tool. Be honest. Both "using data" is not a
+  link; exposome statistics and MRI image reconstruction are different fields.
+- `fit`: "strong" if the student already works in the same area; "partial" if they share methods or
+  questions but not the field; "weak" if there's little real connection, or if the papers look like
+  a different person from the programme described.
+- `paper`: the exact title of ONE paper to mention: the one closest to the student's own work or
+  stated interest, looking at recent AND most-cited papers. Not simply the newest.
+
+Then write `subject` and `body` (150-220 words), in plain, warm, confident prose:
+1. "Dear Professor <surname>,"
+2. Who they are, accurately, in one sentence: their degree and university, when they graduated or
+   will graduate, and their current role and organisation, exactly as in the memory. Work out what
+   is current from the dates. Never merge two roles or organisations into one.
+3. Their work: one or two sentences about the chosen paper in the student's own voice: what it did
+   or found, and what the student found interesting, wants to ask, or would like to try next. If
+   the student said what draws them to this professor, build the email around that.
+4. One or two concrete things the student has done that matter here, with a real detail or number
+   from the memory, and the link stated plainly. If the fit is partial or weak, be honest: say what
+   they would bring (e.g. data management, statistics in R) and what they want to learn.
+5. The ask: are they taking PhD students for the coming intake, and would they be open to a short
+   call? Mention the CV is attached.
+6. Sign off with the student's full name.
+
+Style:
+- Sound like a thoughtful person, not a template. Vary sentence length. Contractions are fine.
+- Never use: "aligns with", "aligned with", "I am writing to inquire", "I am writing to express",
+  "provides a direct foundation", "passionate", "for your review", "esteemed", "I hope this email
+  finds you well", "leverage", "synergy", "deeply fascinated", "keen interest".
+- Mention one paper only, briefly and accurately. Don't repeat its full title in a sentence if a
+  short description reads better (the title can go in quotes once). Claim only what the title and
+  abstract show.
+- Only use facts about the student from the memory. If something important is missing, leave a gap
+  in [square brackets] for them to fill in.
+- `subject`: short and specific, e.g. "Prospective PhD student: exposome data and your air pollution work".
+- Follow the student's preferences (for example UK spelling).
+{extra}
 """ + TODAY
 
 
 def supervisor_prompt(memory_json: str, target: str, university: str, programme: str,
-                      supervisor: str) -> tuple[str, str]:
+                      supervisor: str, interest: str = "", instruction: str = "") -> tuple[str, str]:
     about = target.strip() or "(No description of their research was given.)"
-    return (SUPERVISOR_SYSTEM.format(today=_today()),
-            f"<memory>\n{memory_json}\n</memory>\n\n<supervisor_and_programme>\n{about}\n</supervisor_and_programme>\n\n"
-            f"Supervisor: {supervisor or 'not given (use Dear Professor [name])'}\n"
+    extra = f"\nThe student's instruction for this draft: {instruction.strip()}" if instruction.strip() else ""
+    user = (f"<memory>\n{memory_json}\n</memory>\n\n<professor_and_programme>\n{about}\n</professor_and_programme>\n\n"
+            f"Professor: {supervisor or 'not given (use Dear Professor [name])'}\n"
             f"University: {university or 'not given'}\nProgramme: {programme or 'not given'}")
+    if interest.strip():
+        user += f"\n\nWhat draws the student to this professor's work, in their own words: {interest.strip()}"
+    return SUPERVISOR_SYSTEM.format(extra=extra, today=_today()), user
 
 
 # ---- LinkedIn ------------------------------------------------------------

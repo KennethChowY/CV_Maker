@@ -39,6 +39,7 @@ from .assistant import (
     InterviewPrep,
     LinkedInProfile,
     StrengthenQuestions,
+    SupervisorEmail,
     TruthReport,
     follow_up_prompt,
     interview_prompt,
@@ -291,8 +292,9 @@ class ChatBackend:
         return self._chat(*interview_prompt(_compact(memory), target, company, role, kind), InterviewPrep)
 
     def supervisor_email(self, memory: Memory, target: str, university: str, programme: str,
-                         supervisor: str = "") -> Email:
-        return self._chat(*supervisor_prompt(_compact(memory), target, university, programme, supervisor), Email)
+                         supervisor: str = "", interest: str = "", instruction: str = "") -> SupervisorEmail:
+        return self._chat(*supervisor_prompt(_compact(memory), target, university, programme, supervisor,
+                                             interest, instruction), SupervisorEmail)
 
     def follow_up_email(self, memory: Memory, company: str, role: str, days: int, notes: str = "") -> Email:
         return self._chat(*follow_up_prompt(_compact(memory), company, role, days, notes), Email)
