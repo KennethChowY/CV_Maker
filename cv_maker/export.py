@@ -222,3 +222,47 @@ def html_to_docx(body: str, *, template: str, accent: str, page_size: str) -> by
     buffer = io.BytesIO()
     doc.save(buffer)
     return buffer.getvalue()
+
+
+def letter_to_docx(body: str, *, template: str, accent: str, page_size: str) -> bytes:
+    """A Word version of the cover letter page."""
+    soup = BeautifulSoup(body, "html.parser")
+    doc = Document()
+    width_mm, height_mm = PAGE_MM["letter" if page_size == "letter" else "A4"]
+    section = doc.sections[0]
+    section.page_width, section.page_height = Mm(width_mm), Mm(height_mm)
+    section.left_margin = section.right_margin = Mm(22)
+    section.top_margin = section.bottom_margin = Mm(20)
+    normal = doc.styles["Normal"]
+    normal.font.name = FONTS.get(template, "Arial")
+    normal.element.rPr.rFonts.set(qn("w:eastAsia"), normal.font.name)
+    normal.font.size = Pt(11)
+    muted = RGBColor(0x4F, 0x55, 0x61)
+
+    header = soup.find(class_="cv-header")
+    if header:
+        p = doc.add_paragraph()
+        _tight(p)
+        r = p.add_run(_text(header.find(class_="cv-name")))
+        r.bold, r.font.size = True, Pt(18)
+        contact = header.find(class_="cv-contact")
+        if contact:
+            p = doc.add_paragraph()
+            _tight(p, 0, 14)
+            r = p.add_run("  ·  ".join(_text(s) for s in contact.find_all("span")))
+            r.font.size, r.font.color.rgb = Pt(9.5), muted
+            _rule_below(p, "C9CFD8")
+        header.extract()
+    for node in soup.find_all("p"):
+        p = doc.add_paragraph()
+        _tight(p, 0, 9)
+        p.paragraph_format.line_spacing = 1.2
+        lines = [line.strip() for line in node.get_text("\n").split("\n") if line.strip()]
+        for i, line in enumerate(lines):
+            run = p.add_run((" " if node.find("br") is None and i else "") + line)
+            run.bold = bool(node.find("strong")) or "letter-sign" in (node.get("class") or [])
+            if i < len(lines) - 1 and node.find("br") is not None:
+                run.add_break()
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()

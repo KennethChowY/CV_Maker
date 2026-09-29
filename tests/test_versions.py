@@ -69,3 +69,32 @@ def test_delete_application_returns_to_general(client):
 
 def test_application_needs_company_or_role(client):
     assert client.post("/api/versions", json={"target": "ad"}).status_code == 400
+
+
+def test_cover_letter_is_written_per_application(client, ai):
+    vid = client.post("/api/versions", json={"company": "HSBC", "role": "Analyst", "target": "Python, SQL"}).get_json()["active"]["id"]
+    body = client.post("/api/letter", json={"tone": "warm"}).get_json()
+    assert ai.letter_args == ("Python, SQL", "HSBC", "Analyst", "warm")
+    html = body["letter"]["html"]
+    assert "Hiring Team<br>HSBC" in html and "Re: Analyst" in html and "At Acme I built X for 3 teams." in html
+    assert body["letter"]["tone"] == "warm" and body["letter"]["edited"] is False
+
+    client.post("/api/letter/edits", json={"html": html.replace("3 teams", "four teams")})
+    general = client.post("/api/versions/active", json={"id": "general"}).get_json()
+    assert general["letter"] == {}  # the general CV has its own (empty) letter
+    back = client.post("/api/versions/active", json={"id": vid}).get_json()
+    assert "four teams" in back["letter"]["html"] and back["letter"]["edited"] is True
+
+    res = client.get("/api/export/letter.docx")
+    assert res.status_code == 200 and "Cover%20Letter%20%E2%80%93%20HSBC.docx" in res.headers["Content-Disposition"]
+    import io
+    import docx
+    text = "\n".join(p.text for p in docx.Document(io.BytesIO(res.data)).paragraphs)
+    assert "Ada Lovelace" in text and "four teams" in text and "Dear Hiring Team," in text
+
+
+def test_letter_rejects_unknown_tone_and_needs_ai(client, tmp_path):
+    assert client.post("/api/letter", json={"tone": "sarcastic"}).status_code == 400
+    assert client.get("/api/export/letter.pdf").status_code == 400  # nothing written yet
+    no_ai = create_app(tmp_path / "other", ai=None).test_client()
+    assert no_ai.post("/api/letter", json={}).status_code == 400

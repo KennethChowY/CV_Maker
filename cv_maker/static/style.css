@@ -283,3 +283,7 @@ button.danger { color: var(--danger); }
 .improve-results .thinking .spinner { width: 14px; height: 14px; }
 .cv .cv-entry li.improving { background: #fff7e0; border-radius: 3px; }
 @media print { .improve-pop { display: none !important; } }
+
+/* Cover letter page */
+.paper.cover { padding: 20mm 22mm; }
+.paper.cover.letter-us { width: 8.5in; min-height: 11in; }

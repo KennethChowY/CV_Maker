@@ -1,0 +1,15 @@
+<header class="cv-header letter-header">
+  <h1 class="cv-name">{{ profile.name or "Your Name" }}</h1>
+  {% if contact %}
+  <p class="cv-contact">{% for c in contact %}<span>{{ c }}</span>{% endfor %}</p>
+  {% endif %}
+</header>
+<p class="letter-date">{{ today }}</p>
+{% if company %}<p class="letter-to">Hiring Team<br>{{ company }}</p>{% endif %}
+{% if role %}<p class="letter-re"><strong>Re: {{ role }}</strong></p>{% endif %}
+<p class="letter-greeting">{{ letter.greeting | mark }}</p>
+{% for p in letter.paragraphs %}
+<p>{{ p | mark }}</p>
+{% endfor %}
+<p class="letter-closing">{{ letter.closing | mark }}</p>
+<p class="letter-sign">{{ profile.name }}</p>

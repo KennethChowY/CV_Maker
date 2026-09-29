@@ -92,3 +92,68 @@ $("improve-ask").addEventListener("submit", (e) => {
   if (instruction) requestImprove("custom", instruction);
 });
 document.querySelector(".improve-close").addEventListener("click", closeImprove);
+
+// ---------- Cover letter ----------
+
+let letterTimer = null;
+let savingLetter = Promise.resolve();
+
+function renderLetter() {
+  const letter = state.letter || {};
+  const page = $("letter");
+  const active = state.active;
+  const forWhom = active.id === "general" ? "your general CV" : active.name;
+  $("letter-for").textContent = letter.html
+    ? `Cover letter for ${forWhom}${letter.edited ? " · edits saved" : ""}. Click to edit.`
+    : `Cover letter for ${forWhom}`;
+  if (document.activeElement !== page) page.innerHTML = letter.html || "";
+  page.hidden = !letter.html;
+  page.classList.remove("t-classic", "t-modern", "t-minimal");
+  page.classList.add(`t-${state.settings.template}`);
+  if (state.settings.template === "modern") page.style.setProperty("--cv-accent", state.settings.accent);
+  else page.style.removeProperty("--cv-accent");
+  page.classList.toggle("letter-us", state.settings.page_size === "letter");
+  $("letter-empty").hidden = !!letter.html;
+  $("letter-empty-text").textContent = active.id === "general" && !(state.target || "").trim()
+    ? "For the best letter, create an application in the Applications tab with the job ad, then write its letter here. You can also write a general one now."
+    : `It's written from your memory and the job ad for ${forWhom}, so every claim is something you've actually done.`;
+  $("letter-write").textContent = letter.html ? "Rewrite" : "Write cover letter";
+  $("letter-write").disabled = !state.ai_enabled;
+  $("letter-pdf").disabled = !letter.html;
+  $("letter-docx").disabled = !letter.html;
+  if (letter.tone) $("letter-tone").value = letter.tone;
+}
+
+async function writeLetter() {
+  if (state.letter?.edited && !confirm("Rewriting replaces your edits to this letter. Continue?")) return;
+  await withBusy(busyText("Writing your cover letter…"), async () => {
+    render(await api("POST", "/api/letter", { tone: $("letter-tone").value }));
+    showNotice("");
+  });
+}
+
+$("letter").addEventListener("input", () => {
+  clearTimeout(letterTimer);
+  letterTimer = setTimeout(() => {
+    savingLetter = api("POST", "/api/letter/edits", { html: $("letter").innerHTML })
+      .then(() => { state.letter = { ...state.letter, html: $("letter").innerHTML, edited: true }; })
+      .catch((err) => showNotice(err.message, true));
+  }, 800);
+});
+$("letter").addEventListener("paste", (e) => {
+  e.preventDefault();
+  document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
+});
+$("letter-write").addEventListener("click", writeLetter);
+$("letter-pdf").addEventListener("click", async () => {
+  await savingLetter;
+  const ok = await downloadFile("/api/export/letter.pdf", "Making your PDF…");
+  if (!ok && $("notice").textContent.includes("No Chrome")) {
+    showNotice("No Chrome, Edge or Brave browser was found, so the print window opened instead. Choose 'Save as PDF'.");
+    printFallback("Cover Letter");
+  }
+});
+$("letter-docx").addEventListener("click", async () => {
+  await savingLetter;
+  downloadFile("/api/export/letter.docx", "Making your Word document…");
+});

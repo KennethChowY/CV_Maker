@@ -58,6 +58,19 @@ def order_sections(cv: CVDocument, order: list[str]) -> CVDocument:
     return cv
 
 
+def render_letter(memory: Memory, letter, company: str = "", role: str = "") -> str:
+    """HTML for a cover letter, headed with the person's name and contact details."""
+    from datetime import date
+
+    p = memory.profile
+    contact = [x for x in (p.email, p.phone, p.location) if x] + [link.url for link in p.links[:2]]
+    today = date.today()
+    return _env.get_template("letter.html.j2").render(
+        profile=p, contact=contact, company=company, role=role, letter=letter,
+        today=f"{today.day} {today.strftime('%B %Y')}",
+    )
+
+
 def render_cv(cv: CVDocument, order: list[str] = (), hidden: list[str] = ()) -> str:
     """HTML for the CV. Hidden sections stay in the page (so they can be shown again) but aren't displayed."""
     hidden_keys = {h.strip().lower() for h in hidden}

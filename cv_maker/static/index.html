@@ -13,6 +13,7 @@
     <div class="brand">CV Maker</div>
     <nav class="tabs" role="tablist">
       <button class="tab active" data-tab="cv" role="tab">CV</button>
+      <button class="tab" data-tab="letter" role="tab">Cover letter</button>
       <button class="tab" data-tab="applications" role="tab">Applications</button>
       <button class="tab" data-tab="memory" role="tab">Memory</button>
       <button class="tab" data-tab="history" role="tab">History</button>
@@ -146,6 +147,30 @@
         <div id="cv-empty" class="empty" hidden>
           <h3>No CV yet</h3>
           <p>Start by telling me about yourself on the left, or attach your current CV. Your memory builds up over time and the CV is rewritten from it.</p>
+        </div>
+      </section>
+
+      <section id="tab-letter" class="panel" hidden>
+        <div class="toolbar">
+          <span id="letter-for" class="edit-status"></span>
+          <div class="spacer"></div>
+          <select id="letter-tone" title="Tone">
+            <option value="professional">Professional</option>
+            <option value="warm">Warm</option>
+            <option value="concise">Concise</option>
+          </select>
+          <button id="letter-write">Write cover letter</button>
+          <button id="letter-docx" title="Download as a Word document">Word</button>
+          <button id="letter-pdf" class="primary">Download PDF</button>
+        </div>
+        <div class="paper-wrap">
+          <div class="paper-frame">
+            <article id="letter" class="cv cover paper" contenteditable="true" spellcheck="true" hidden></article>
+          </div>
+        </div>
+        <div id="letter-empty" class="empty">
+          <h3>No cover letter yet</h3>
+          <p id="letter-empty-text"></p>
         </div>
       </section>
 

@@ -13,9 +13,9 @@ from pydantic import ValidationError
 from urllib.parse import quote
 
 from .ai import AIError, Attachment
-from .export import ExportError, html_to_docx, html_to_pdf, page_document
+from .export import ExportError, html_to_docx, html_to_pdf, letter_to_docx, page_document
 from .models import NO_AI_MESSAGE, ModelManager, build_ai, check_api_key, credentials_configured, default_choice
-from .render import basic_cv, render_cv, section_list, tidy_cv
+from .render import basic_cv, render_cv, render_letter, section_list, tidy_cv
 from .schema import Memory
 from .store import GENERAL, STATUSES, Store
 from .writing import IMPROVE_MODES, LETTER_TONES
@@ -41,6 +41,11 @@ def ai_status(ai) -> dict:
         return {"label": "No AI model", "ready": False, "message": NO_AI_MESSAGE, "local": False}
     status = getattr(ai, "status", None)
     return status() if status else {"label": "AI", "ready": True, "message": "", "local": False}
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def attachment(filename: str) -> str:
@@ -296,6 +301,62 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         if not suggestions:
             return error("The AI didn't come up with anything different. Try another option.", 502)
         return jsonify({"suggestions": suggestions})
+
+    # ---- cover letter (one per version) ---------------------------------
+
+    @app.post("/api/letter")
+    def write_letter():
+        ai = models.current()
+        if not ai:
+            return error(NO_AI_MESSAGE)
+        tone = str((request.get_json(silent=True) or {}).get("tone", "professional"))
+        if tone not in LETTER_TONES:
+            return error("Unknown tone.")
+        vid = store.active_version()
+        info = store.version_info(vid)
+        memory = store.load_memory()
+        letter = ai.write_letter(memory, info["target"], info["company"], info["role"], tone)
+        if not letter.paragraphs:
+            return error("The AI didn't write a letter. Try again.", 502)
+        html = render_letter(memory, letter, info["company"], info["role"])
+        store.save_letter({"html": html, "tone": tone, "edited": False, "generated_at": _now_iso()}, vid)
+        return state()
+
+    @app.post("/api/letter/edits")
+    def save_letter_edits():
+        html = (request.get_json(silent=True) or {}).get("html")
+        if not isinstance(html, str):
+            return error("Missing letter.")
+        vid = store.active_version()
+        letter = store.load_letter(vid)
+        letter.update({"html": clean_html(html), "edited": True})
+        store.save_letter(letter, vid)
+        return jsonify({"ok": True})
+
+    @app.get("/api/export/letter.pdf")
+    def export_letter_pdf():
+        body = store.load_letter(store.active_version()).get("html", "")
+        if not body:
+            return error("There's no cover letter to download yet.")
+        d = design()
+        doc = page_document(body, title=file_name("Cover Letter", "pdf"), scale=1.0, **d,
+                            extra_css=".cv { padding: 20mm 22mm; }")
+        doc = doc.replace("<article class='cv ", "<article class='cv cover ", 1)
+        try:
+            pdf = html_to_pdf(doc)
+        except ExportError as e:
+            return error(str(e), 501)
+        return Response(pdf, mimetype="application/pdf",
+                        headers={"Content-Disposition": attachment(file_name("Cover Letter", "pdf"))})
+
+    @app.get("/api/export/letter.docx")
+    def export_letter_docx():
+        body = store.load_letter(store.active_version()).get("html", "")
+        if not body:
+            return error("There's no cover letter to download yet.")
+        data = letter_to_docx(body, **design())
+        return Response(data, mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        headers={"Content-Disposition": attachment(file_name("Cover Letter", "docx"))})
 
     # ---- job applications (each has its own tailored CV) -------------
 

@@ -76,6 +76,7 @@ function render(next) {
   renderSections();
   renderVersions();
   renderApplications();
+  if (typeof renderLetter === "function") renderLetter();
   renderMemory();
   renderHistory();
 }

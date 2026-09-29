@@ -100,3 +100,11 @@ body.standalone .cv { max-width: 182mm; margin: 12mm auto; }
 /* Unfilled placeholders such as [rating]: highlighted on screen, plain when printed. */
 .cv mark.placeholder { background: #ffe8a3; color: inherit; border-radius: 2px; padding: 0 1px; }
 @media print { .cv mark.placeholder { background: none; } }
+
+/* ---- cover letter (same templates as the CV) ---- */
+.cv.cover { font-size: calc(11pt * var(--cv-scale)); line-height: 1.5; }
+.cv.cover .letter-header { margin-bottom: 1.6em; padding-bottom: 0.6em; border-bottom: 1px solid var(--cv-rule); }
+.cv.cover p { margin: 0 0 0.9em; }
+.cv.cover .letter-date { color: var(--cv-muted); margin-bottom: 1.2em; }
+.cv.cover .letter-closing { margin-top: 1.4em; margin-bottom: 0.2em; }
+.cv.cover .letter-sign { font-weight: 700; }
