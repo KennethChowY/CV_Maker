@@ -230,7 +230,7 @@ pytest
 | `cv_maker/api_models.py`, `providers.py` | API keys for OpenAI-compatible services, and recognising which service a key is for |
 | `cv_maker/writing.py` | Prompts shared by both backends: bullet rewrites and cover letters |
 | `cv_maker/export.py` | PDF (via a local Chrome-based browser) and Word downloads |
-| `cv_maker/ollama.py` | Local-model backend (Ollama) and the change-merging logic |
+| `cv_maker/ollama.py` | Local-model backend (Ollama): installed models, downloads |
 | `cv_maker/models.py` | The AI model picker: choosing, downloading and switching models |
 | `cv_maker/render.py`, `templates/cv.html.j2` | CV HTML, plus the no-AI fallback layout |
 | `cv_maker/app.py` | Flask routes |
