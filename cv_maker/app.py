@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import re
+import threading
+import time
 from html import escape
 from pathlib import Path
 
@@ -233,6 +235,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
 
         Changes must carry a custom header, which browsers only let the app's own page
         send, and the Host must be this computer (which also stops DNS-rebinding tricks)."""
+        app.config["LAST_SEEN"] = time.monotonic()  # for --quit-when-idle
         host = (request.host or "").rsplit(":", 1)[0] if not (request.host or "").startswith("[") \
             else (request.host or "").split("]")[0] + "]"
         if host not in app.config["ALLOWED_HOSTS"]:
@@ -262,6 +265,11 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     @app.get("/static/<path:name>")
     def static_files(name: str):
         return send_from_directory(STATIC, name)
+
+    @app.get("/api/ping")
+    def ping():
+        """The open page checks in every minute, so the Mac app knows it's still in use."""
+        return jsonify({"ok": True})
 
     @app.get("/api/state")
     def get_state():
@@ -846,6 +854,8 @@ def main() -> None:
                         help="Port to use (default: 5000, or the next free one; macOS uses 5000 for AirPlay)")
     parser.add_argument("--data", default=os.environ.get("CV_MAKER_DATA", "data"), help="Where memory is stored")
     parser.add_argument("--no-browser", action="store_true", help="Don't open the page in your browser on start")
+    parser.add_argument("--quit-when-idle", type=int, default=0, metavar="MINUTES",
+                        help="Stop by itself this many minutes after the page was closed (used by the Mac app)")
     parser.add_argument(
         "--ai", default=os.environ.get("CV_MAKER_AI", "auto"), choices=["auto", "api", "ollama", "none"],
         help="Starting choice until one is picked on the page. "
@@ -859,9 +869,23 @@ def main() -> None:
         args.port = free_port(args.host, 5000)
     url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '::') else args.host}:{args.port}"
     print(f"CV Maker running at {url}  (memory in {Path(args.data).resolve()})")
+    url_file = Path(args.data) / ".server-url"
+    url_file.parent.mkdir(parents=True, exist_ok=True)
+    url_file.write_text(url)  # lets the Mac app reopen this copy instead of starting another
+    if args.quit_when_idle > 0:
+        app.config["LAST_SEEN"] = time.monotonic()
+
+        def quit_when_idle() -> None:
+            while True:
+                time.sleep(30)
+                if time.monotonic() - app.config["LAST_SEEN"] > args.quit_when_idle * 60:
+                    print("The page has been closed for a while, so CV Maker stopped. Open it again any time.")
+                    url_file.unlink(missing_ok=True)
+                    os._exit(0)
+
+        threading.Thread(target=quit_when_idle, daemon=True).start()
     print("Pick or change the AI model in the 'AI model' box on the page.")
     if not args.no_browser:
-        import threading
         import webbrowser
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
     try:

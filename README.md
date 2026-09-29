@@ -52,7 +52,9 @@ It can use either:
   it to the last generated version.
 - **Backup.** **Back up** in the Memory tab downloads everything (memory, CVs,
   applications, letters; never your API key) as a zip. To restore, unzip it and
-  use its `data` folder as the app's data folder.
+  use its `data` folder as the app's data folder. **Automatic backups** saves
+  one to a folder you choose (iCloud Drive is suggested on a Mac), at most once
+  an hour after you change something, keeping the latest 30.
 - **Fixing wrong information.** In the **Memory** tab, click **Edit** on any
   entry to correct it in a form, move it between Experience and Projects, or
   change a publication's type. **+ Add** creates a new entry. These edits don't
@@ -106,6 +108,55 @@ It can use either:
   general CV (or any other application's), with changed wording highlighted:
   added words in green, removed words struck through in red, and whole bullets
   that were added or dropped marked. Check what was tailored before you send it.
+- **Is it all true?** In the CV check, **Check it's all true** has the AI compare
+  every line of the CV with your memory and list anything it can't back up:
+  a number that's different, a tool you never mentioned, "led" where you
+  "helped". Use its truthful suggestion, remove the line, or, if it is true,
+  add the missing fact to your memory. Worth running before sending a tailored CV.
+- **Strengthen my CV.** Under *Tell me something new*, **Answer a few questions**
+  asks up to six specific questions about your own work (mostly the numbers
+  behind it: how many users, samples, hours saved). Answer the ones you can and
+  they go into your memory. It works without an AI model too, with simpler questions.
+- **PhD applications.** In **New application**, choose *A PhD, master's by
+  research or research position*. You get an academic CV (Education first, then
+  Research Experience, Publications & Presentations, Teaching Experience, Awards &
+  Scholarships), research-focused wording, a **statement of purpose** instead of
+  a cover letter, and PhD-style interview prep. Paste the programme page or the
+  lab's research as its description.
+- **Email a professor.** In the Applications tab, **Email a professor**: type
+  their name and university and the app finds them in
+  [OpenAlex](https://openalex.org), a free, open index of academic papers. Pick
+  the right person (names clash, so it shows their university, topics and paper
+  count), see their recent and most-cited papers, then **Draft the email**: a
+  short first email that mentions one of their papers and connects it to your
+  own work, asks if they're taking PhD students, and mentions your CV. It's
+  saved as a PhD application with an academic CV, so you can track it.
+- **Interview prep.** Open an application and go to **Interview prep** for the
+  8-10 questions you're most likely to be asked for that job, with talking points
+  from your real experience, and good questions to ask them.
+- **LinkedIn.** The **LinkedIn** tab writes a headline, an About section and a
+  description for each job from your memory, with copy buttons, so your profile
+  matches your CV.
+- **Job ads from a link.** In **New application**, paste the link and click
+  **Get the ad from this link**. Some sites (LinkedIn, for example) only show the
+  ad when you're logged in; then copy and paste it instead.
+- **Follow-ups.** Applications marked *Applied* a week ago or more without a
+  follow-up are flagged (with a count on the Applications tab), with a button to
+  draft a short, polite follow-up email. Copy it or open it in your email app,
+  then mark it as sent.
+- **Countries and languages.** Above the CV, choose the country whose
+  conventions to follow: **Hong Kong** (British spelling, languages you speak
+  easy to find, a photo is fine), **United States** (a one-page résumé, American
+  spelling, no photo or personal details) or **United Kingdom** (British
+  spelling, no photo). Choose **Traditional** or **Simplified Chinese** to get a
+  translated CV; company and university names are kept. Each application can
+  have its own country and language.
+- **Photo.** **Photo** above the CV adds one to the header. It's shown only for
+  countries where photos are expected, and never on the ATS-safe PDF.
+- **AI usage.** Under the model in the AI model box, a line shows roughly what
+  your API key has cost this month; click it for a breakdown by task. Costs are
+  estimated from Anthropic's list prices; other services show tokens (check
+  their billing page for exact costs). Local models are free.
 - **Downloads.** **Download PDF** saves a PDF straight away, made by the Chrome,
   Edge or Brave browser already on your computer: selectable text (which
   applicant-tracking systems need), your template, no browser header or footer.
@@ -125,6 +176,12 @@ in the project folder. The first time, it sets everything up (about a minute).
 After that it starts the app and opens it in your browser. Keep its window open
 while you use the app; close it to stop. (On a Mac, if it says the file can't
 be opened, right-click it, choose **Open**, then **Open** again.)
+
+**As a Mac app:** double-click **`make_mac_app.command`** once. It adds
+**CV Maker** (with its own icon) to your Applications folder, so you can open it
+from Spotlight, Launchpad or the Dock like any app. There's no window to keep
+open: it runs in the background and stops by itself about 15 minutes after you
+close its page. If you move the project folder, run `make_mac_app.command` again.
 
 **Or from a terminal**, using a virtual environment (a private folder of
 packages just for this project):
@@ -224,11 +281,17 @@ Everything is stored as plain files in the data directory:
 | `settings.json` | Chosen model, design, section order and other settings |
 | `secrets.json` | Your API key and which service it's for, if you added one on the page |
 | `wording_cache.json` | Local model's wording, reused so unchanged entries aren't rewritten |
+| `versions/<id>/prep.json`, `professor.json` | Interview prep, and a professor's research found for a PhD application |
+| `linkedin.json` | Your LinkedIn text |
+| `photo.jpg` | Your CV photo, if you added one |
+| `usage.jsonl` | Tokens used per AI request, for the usage and cost line |
 
 `data/` is in `.gitignore` so personal details aren't committed by accident.
 Back it up, or point `--data` at a private folder or repository.
 
-With the local model, nothing leaves your computer. With an API key, your memory
+Looking up a professor sends their name to OpenAlex, and **Get the ad from
+this link** fetches that page; nothing about you is sent. With the local model,
+nothing else leaves your computer. With an API key, your memory
 and any files you attach are sent to that service when you add something or
 rebuild the CV.
 

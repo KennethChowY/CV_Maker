@@ -1481,4 +1481,6 @@ $("api-model").addEventListener("change", async (e) => {
 window.addEventListener("focus", () => { if (!downloadPoll) loadModels(); });
 
 api("GET", "/api/state").then(render).catch((err) => showNotice(err.message, true));
+// Check in every minute: the Mac app stops the server a while after the page is closed.
+setInterval(() => fetch("/api/ping").catch(() => {}), 60000);
 loadModels();
