@@ -35,7 +35,7 @@ def make_pdf(text: str) -> bytes:
 class FakeOllama:
     """A tiny HTTP server that speaks enough of the Ollama API for the tests."""
 
-    def __init__(self, replies, models=("qwen3:8b",), status=200):
+    def __init__(self, replies, models=("qwen3:4b",), status=200):
         self.replies = list(replies)
         self.requests = []
         self.models = list(models)
@@ -151,7 +151,7 @@ def test_ingest_sends_schema_and_merges_reply(memory):
     assert [e.organization for e in result.memory.experience] == ["Acme", "OldCo", "Globex"]
     assert result.changes == ["Added Globex"] and result.questions == ["When did you start?"]
     req = fake.requests[0]
-    assert req["model"] == "qwen3:8b" and req["stream"] is False
+    assert req["model"] == "qwen3:4b" and req["stream"] is False
     assert req["format"]["title"] == "MemoryUpdate"
     assert req["options"]["num_ctx"] >= 8192
     assert "I joined Globex as Lead" in req["messages"][1]["content"]
@@ -261,14 +261,14 @@ def test_helpful_errors_when_ollama_missing_or_model_not_pulled(memory):
     try:
         ai = OllamaAI(host=fake.url)
         assert "isn't downloaded" in ai.status()["message"]
-        with pytest.raises(AIError, match="qwen3:8b' isn't downloaded"):
+        with pytest.raises(AIError, match="qwen3:4b' isn't downloaded"):
             ai.build_cv(memory)
     finally:
         fake.close()
 
 
 def test_status_ready_when_model_present():
-    fake = FakeOllama([], models=("qwen3:8b",))
+    fake = FakeOllama([], models=("qwen3:4b",))
     try:
         status = OllamaAI(host=fake.url).status()
     finally:

@@ -27,7 +27,7 @@ from .backend import (  # noqa: F401  (re-exported for callers and tests)
 from .schema import BaseModel
 
 DEFAULT_HOST = "http://127.0.0.1:11434"
-DEFAULT_MODEL = os.environ.get("CV_MAKER_OLLAMA_MODEL", "qwen3:8b")
+DEFAULT_MODEL = os.environ.get("CV_MAKER_OLLAMA_MODEL", "qwen3:4b")
 DEFAULT_CONTEXT = int(os.environ.get("CV_MAKER_OLLAMA_CONTEXT", "16384"))
 REQUEST_TIMEOUT = 900  # CPU-only machines can take several minutes per request
 KEEP_LOADED = "30m"    # keep the model in memory between updates so it doesn't reload each time

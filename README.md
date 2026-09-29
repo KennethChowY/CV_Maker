@@ -178,7 +178,7 @@ python -m cv_maker --ai none      # start with no AI: plain layout, edit memory 
 | `--data` / `CV_MAKER_DATA` | `data/` | Where your memory and CV are stored |
 | `--port` | `5000` or the next free one | Port to serve on |
 | `--no-browser` | | Don't open the page automatically |
-| `CV_MAKER_OLLAMA_MODEL` | `qwen3:8b` | Starting local model, before one is picked on the page |
+| `CV_MAKER_OLLAMA_MODEL` | `qwen3:4b` | Starting local model, before one is picked on the page |
 | `CV_MAKER_OLLAMA_CONTEXT` | `16384` | Local model context size; raise it if you see "ran out of room" |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Where Ollama is running |
 | `CV_MAKER_MODEL` | `claude-opus-5-5` | Default model for an Anthropic key |

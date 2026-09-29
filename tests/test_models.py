@@ -22,7 +22,7 @@ def test_catalog_lists_recommended_and_installed_models(fake, tmp_path):
     fake.models.append("mistral:7b")
     client = create_app(tmp_path / "data").test_client()
     cat = client.get("/api/models").get_json()
-    assert cat["choice"] == {"backend": "ollama", "model": "qwen3:8b"}
+    assert cat["choice"] == {"backend": "ollama", "model": "qwen3:4b"}
     assert cat["ollama_running"] is True and cat["api_key"]["set"] is False
     by_name = {m["name"]: m for m in cat["local"]}
     assert by_name["qwen3:8b"]["installed"] and not by_name["qwen3:4b"]["installed"]
