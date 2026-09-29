@@ -43,7 +43,7 @@
 }
 
 /* ---- entries: line 1 = title | dates, line 2 = organisation | location ---- */
-.cv-entry { margin-bottom: 0.55em; break-inside: avoid; }
+.cv-entry { margin-bottom: 0.55em; }
 .cv-entry:last-child { margin-bottom: 0; }
 .cv-entry-head, .cv-entry-sub { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; }
 .cv-entry-title { font-weight: 700; flex: 1 1 auto; min-width: 0; }
@@ -108,3 +108,13 @@ body.standalone .cv { max-width: 182mm; margin: 12mm auto; }
 .cv.cover .letter-date { color: var(--cv-muted); margin-bottom: 1.2em; }
 .cv.cover .letter-closing { margin-top: 1.4em; margin-bottom: 0.2em; }
 .cv.cover .letter-sign { font-weight: 700; }
+
+/* ---- page breaks: where a new page may start (cv-layout.js predicts the same places) ----
+   - never straight after a section heading, or inside an entry's title lines
+   - short entries, list sections (Skills, Languages…) and single bullets never split
+   - long entries (5+ bullets) may split, but keep their title with the first two bullets
+     and never leave the last bullet alone on the next page */
+.cv-section h2, .cv-entry-head, .cv-entry-sub, .cv-entry-desc { break-after: avoid; break-inside: avoid; }
+.cv-entry, .cv-list, .cv-summary, .cv-header, .cv li { break-inside: avoid; }
+.cv-entry.long { break-inside: auto; }
+.cv-entry.long > ul > li:nth-child(-n+2), .cv-entry.long > ul > li:last-child { break-before: avoid; }

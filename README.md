@@ -67,6 +67,14 @@ It can use either:
   colour accent; **Minimal**: black and white), the paper size, and **Fit to one
   page**, which shrinks text and spacing just enough to fit. Dashed lines in the
   preview show where each new page would start.
+- **Tidy lines and page breaks.** When a bullet spills a single word onto an
+  extra line, the letter spacing is tightened invisibly to pull it back (in the
+  preview and the PDF alike); longer spill-overs are listed in the CV check.
+  Pages break at sensible places: never straight after a heading, never in the
+  middle of a short entry or a list section like Skills, never leaving one bullet
+  alone at the top of a page, and a long entry keeps its title with its first
+  two bullets. The dashed line in the preview shows exactly where the next page
+  starts, and the check warns if the last page is nearly empty.
 - **CV check.** Updates as you edit: page count, unfilled gaps, bullets with no
   numbers, weak openings like "Responsible for…", overlong bullets, mixed UK/US
   spelling, present tense on past roles, mixed date formats, inconsistent full

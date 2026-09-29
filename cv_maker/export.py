@@ -69,12 +69,14 @@ def page_document(body: str, *, title: str, template: str, accent: str, page_siz
     css = (STATIC / "cv.css").read_text(encoding="utf-8")
     size = "letter" if page_size == "letter" else "A4"
     accent_css = f"--cv-accent: {accent}; " if template == "modern" else ""  # other templates are black
+    layout_js = (STATIC / "cv-layout.js").read_text(encoding="utf-8")  # same line tightening as the preview
     return (
         f"<!doctype html><html><head><meta charset='utf-8'><title>{escape(title)}</title><style>{css}\n"
         f"@page {{ size: {size}; margin: 0; }}\nhtml, body {{ margin: 0; background: #fff; }}\n"
         f".cv {{ padding: 13mm 14mm; box-decoration-break: clone; -webkit-box-decoration-break: clone; }}\n"
         f"{extra_css}</style></head><body>"
         f"<article class='cv t-{template}' style='{accent_css}--cv-scale: {scale:.3f}'>{body}</article>"
+        f"<script>{layout_js}\nCVLayout.tighten(document.querySelector('.cv'));</script>"
         f"</body></html>"
     )
 

@@ -101,3 +101,22 @@ def test_render_applies_order_and_hidden_sections():
     html = render_cv(cv, order=["skills", "education"], hidden=["experience", "summary"])
     assert html.index('data-section="skills"') < html.index('data-section="education"') < html.index('data-section="experience"')
     assert 'data-section="experience" hidden' in html and 'data-section="summary" hidden' in html
+
+
+def test_page_break_hints_in_the_html():
+    cv = CVDocument(name="K", sections=[
+        CVSection(heading="Experience", entries=[
+            CVEntry(title="Long job", bullets=[f"Did thing {i}" for i in range(6)]),
+            CVEntry(title="Short job", bullets=["One", "Two"]),
+        ]),
+        CVSection(heading="Skills", items=["Python"]),
+    ])
+    html = render_cv(cv)
+    assert html.count('class="cv-entry long"') == 1 and html.count('class="cv-entry"') == 1
+    assert 'class="cv-section cv-list" data-section="skills"' in html
+
+
+def test_pdf_page_runs_the_same_line_tightening():
+    from cv_maker.export import page_document
+    doc = page_document("<p>x</p>", title="t", template="classic", accent="#1f4e79", page_size="A4", scale=1.0)
+    assert "window.CVLayout" in doc and "CVLayout.tighten(document.querySelector('.cv'))" in doc

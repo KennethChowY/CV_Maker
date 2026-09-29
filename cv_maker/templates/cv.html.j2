@@ -15,10 +15,10 @@
 </section>
 {% endif %}
 {% for s in cv.sections %}
-<section class="cv-section" data-section="{{ s.heading | lower | trim }}"{% if (s.heading | lower | trim) in hidden %} hidden{% endif %}>
+<section class="cv-section{% if not s.entries %} cv-list{% endif %}" data-section="{{ s.heading | lower | trim }}"{% if (s.heading | lower | trim) in hidden %} hidden{% endif %}>
   <h2>{{ s.heading }}</h2>
   {% for e in s.entries %}
-  <div class="cv-entry">
+  <div class="cv-entry{% if e.bullets | length > 4 %} long{% endif %}">
     <div class="cv-entry-head">
       <span class="cv-entry-title">{{ e.title | mark }}</span>
       {% if e.dates %}<span class="cv-entry-dates">{{ e.dates | mark }}</span>{% endif %}

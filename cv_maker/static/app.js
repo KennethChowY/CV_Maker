@@ -485,6 +485,8 @@ async function rebuild() {
 function cvHtml() {
   const copy = $("cv").cloneNode(true);
   copy.querySelectorAll(".improving, .flash").forEach((n) => n.classList.remove("improving", "flash"));
+  copy.querySelectorAll("[data-tight]").forEach((n) => { n.style.letterSpacing = ""; n.removeAttribute("data-tight"); });
+  copy.querySelectorAll("[style='']").forEach((n) => n.removeAttribute("style"));
   copy.querySelectorAll("[class='']").forEach((n) => n.removeAttribute("class"));
   return copy.innerHTML;
 }
@@ -610,6 +612,7 @@ let pxPerMm = 0;
 let layoutTimer = null;
 let lastPages = 1;
 let fitFailed = false;
+let lastPageFill = 1;  // how full the last page is, 0–1
 
 function mm(n) {
   if (!pxPerMm) {
@@ -662,6 +665,7 @@ function layoutPages() {
 
   let scale = 1;
   cv.style.setProperty("--cv-scale", "1");
+  CVLayout.tighten(cv);
   fitFailed = false;
   const target = usable - mm(FIT_SLACK_MM);
   if (state.settings.fit_one_page && contentHeight(cv) > target) {
@@ -679,15 +683,19 @@ function layoutPages() {
       scale = lo;
     }
     cv.style.setProperty("--cv-scale", scale.toFixed(3));
+    CVLayout.tighten(cv);  // line lengths changed with the new size
   }
 
-  const height = contentHeight(cv);
-  lastPages = Math.max(1, Math.ceil((height - 1) / usable));
+  // Where pages will really break, following the same keep-together rules as the PDF.
+  // A little allowance, because printing lays text out a hair taller than the screen.
+  const pages = CVLayout.breaks(cv, usable - mm(3));
+  lastPages = pages.breaks.length + 1;
+  lastPageFill = pages.lastPageHeight / usable;
   const top = parseFloat(getComputedStyle(cv).paddingTop);
-  guides.replaceChildren(...Array.from({ length: lastPages - 1 }, (_, i) => {
+  guides.replaceChildren(...pages.breaks.map((at, i) => {
     const g = el("div", "page-guide");
-    g.style.top = `${top + usable * (i + 1)}px`;
-    g.append(el("span", "", `Page ${i + 2} starts about here`));
+    g.style.top = `${top + at}px`;
+    g.append(el("span", "", `Page ${i + 2} starts here`));
     return g;
   }));
 
@@ -832,7 +840,10 @@ function runChecks() {
 
   if (fitFailed) add("warn", "Doesn't fit on one page", "Hide a section in the Sections box or shorten some bullets.");
   else if (lastPages > 2) add("warn", `${lastPages} pages is long`, "Recruiters skim. Aim for one page as a student or graduate, two at most.");
-  else if (lastPages === 2) add("info", "Two pages", "Fine with several years of experience. As a student or graduate, try 'Fit to one page'.");
+  else if (lastPages >= 2 && lastPageFill < 0.2 && !state.settings.fit_one_page) {
+    add("warn", `Page ${lastPages} has only a few lines`,
+        "A nearly empty last page looks unfinished. Tick 'Fit to one page' above the CV, or shorten or hide something.");
+  } else if (lastPages === 2) add("info", "Two pages", "Fine with several years of experience. As a student or graduate, try 'Fit to one page'.");
   else add("ok", "Fits on one page");
 
   const gaps = cv.querySelectorAll("mark.placeholder");
@@ -849,6 +860,10 @@ function runChecks() {
   const weak = bullets.filter((li) => WEAK_START.test(li.textContent.trim()));
   if (weak.length) add("warn", `${weak.length} bullet${weak.length > 1 ? "s" : ""} start weakly`,
                        "Start with what you did: Built, Led, Designed, Automated, Analysed…", weak.slice(0, 5));
+
+  const spilled = bullets.filter((li) => CVLayout.spills(li));
+  if (spilled.length) add("info", `${spilled.length} bullet${spilled.length > 1 ? "s spill" : " spills"} a word or two onto an extra line`,
+                          "Shorten slightly (click the bullet, then ✨ → Shorter) to save a line each.", spilled.slice(0, 5));
 
   const long = bullets.filter((li) => li.textContent.trim().length > 220);
   if (long.length) add("info", `${long.length} bullet${long.length > 1 ? "s are" : " is"} very long`,
