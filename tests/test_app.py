@@ -279,3 +279,23 @@ def test_requests_for_other_host_names_are_refused(tmp_path, ai):
     client = create_app(tmp_path, ai=ai).test_client()
     assert client.get("/api/state", headers={"Host": "evil.example.com"}).status_code == 403
     assert client.get("/api/state", headers={"Host": "127.0.0.1:5000"}).status_code == 200
+
+
+def test_undo_my_edits_restores_the_generated_cv(client):
+    original = client.post("/api/ingest", data={"text": "Engineer"}).get_json()["cv_html"]
+    client.post("/api/cv", json={"html": "<p>oops</p>"})
+    body = client.post("/api/cv/reset").get_json()
+    assert body["cv_html"] == original and body["cv_meta"]["edited"] is False
+
+
+def test_backup_contains_everything_but_the_api_key(tmp_path, client):
+    import io
+    import zipfile
+    client.post("/api/ingest", data={"text": "Engineer"})
+    client.post("/api/versions", json={"company": "Acme"})
+    (tmp_path / "secrets.json").write_text('{"key": "sk-secret"}')
+    res = client.get("/api/export/backup.zip")
+    names = zipfile.ZipFile(io.BytesIO(res.data)).namelist()
+    assert "data/memory.json" in names and "data/cv.html" in names
+    assert any(n.startswith("data/versions/") and n.endswith("info.json") for n in names)
+    assert not any("secrets" in n for n in names) and b"sk-secret" not in res.data

@@ -19,9 +19,25 @@ function withPlaceholders(text) {
 let improveLi = null;
 let improveRequest = 0;
 
+// Clicking a bullet (e.g. to type in it) only shows a small "Improve" button beside it;
+// the full set of options opens when that's clicked.
+function showImproveChip(li) {
+  if (improveLi && improveLi !== li) closeImprove();
+  if (!$("improve-pop").hidden && improveLi === li) return;
+  const chip = $("improve-chip");
+  const frame = document.querySelector(".paper-frame").getBoundingClientRect();
+  const r = li.getBoundingClientRect();
+  chip.hidden = false;
+  const lineHeight = parseFloat(getComputedStyle(li).lineHeight) || 16;
+  chip.style.top = `${r.top - frame.top + lineHeight / 2 - chip.offsetHeight / 2}px`;
+  chip.style.left = `${frame.width - chip.offsetWidth - 10}px`;  // in the page's right margin
+  improveLi = li;
+}
+
 function openImprove(li) {
   if (improveLi && improveLi !== li) improveLi.classList.remove("improving");
   improveLi = li;
+  $("improve-chip").hidden = true;
   li.classList.add("improving");
   const pop = $("improve-pop");
   const frame = document.querySelector(".paper-frame").getBoundingClientRect();
@@ -37,6 +53,7 @@ function openImprove(li) {
 function closeImprove() {
   improveRequest++;  // ignore any answer still on its way
   $("improve-pop").hidden = true;
+  $("improve-chip").hidden = true;
   improveLi?.classList.remove("improving");
   improveLi = null;
 }
@@ -73,11 +90,13 @@ function applySuggestion(text) {
 
 $("cv").addEventListener("click", (e) => {
   const li = e.target.closest(".cv-entry li");
-  if (li && state?.ai_enabled) openImprove(li);
+  if (li && state?.ai_enabled) showImproveChip(li);
   else closeImprove();
 });
 document.addEventListener("click", (e) => {
-  if (improveLi && !e.target.closest("#improve-pop") && !e.target.closest("#cv")) closeImprove();
+  if (improveLi && !e.target.closest("#improve-pop") && !e.target.closest("#improve-chip") && !e.target.closest("#cv")) {
+    closeImprove();
+  }
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeImprove(); });
 document.querySelectorAll("#improve-pop [data-mode]").forEach((b) => b.addEventListener("click", () => {
@@ -92,6 +111,8 @@ $("improve-ask").addEventListener("submit", (e) => {
   if (instruction) requestImprove("custom", instruction);
 });
 document.querySelector(".improve-close").addEventListener("click", closeImprove);
+$("improve-chip").addEventListener("mousedown", (e) => e.preventDefault());  // keep the text cursor where it is
+$("improve-chip").addEventListener("click", () => { if (improveLi) openImprove(improveLi); });
 
 // ---------- Cover letter ----------
 

@@ -48,6 +48,11 @@ It can use either:
   auto-rebuild over manual edits. Click **Save edits to memory** and the AI
   folds your corrections and preferred wording back into memory, so future
   versions keep them.
+- **Undo my edits.** If hand edits to a CV go wrong, **Undo my edits** returns
+  it to the last generated version.
+- **Backup.** **Back up** in the Memory tab downloads everything (memory, CVs,
+  applications, letters; never your API key) as a zip. To restore, unzip it and
+  use its `data` folder as the app's data folder.
 - **Fixing wrong information.** In the **Memory** tab, click **Edit** on any
   entry to correct it in a form, move it between Experience and Projects, or
   change a publication's type. **+ Add** creates a new entry. These edits don't
@@ -66,10 +71,11 @@ It can use either:
   numbers, weak openings like "Responsible for…", overlong bullets, mixed UK/US
   spelling, present tense on past roles, mixed date formats, inconsistent full
   stops, repeated words, missing contact details, and, if there's a job ad,
-  which of its keywords your CV is missing. Click a quoted bullet to jump to it.
+  which of its keywords your CV is missing (click one to add it to your memory,
+  if it's true for you). Click a quoted bullet to jump to it.
   Misspellings are underlined in red by your browser as you edit.
-- **Improve one bullet.** Click a bullet on the CV for **Stronger**, **Add a
-  number**, **Shorter**, **Match job ad** or **Ask…** (your own instruction).
+- **Improve one bullet.** Click a bullet on the CV, then the ✨ beside it, for
+  **Stronger**, **Add a number**, **Shorter**, **Match job ad** or **Ask…** (your own instruction).
   You get three versions; click one to use it. *Add a number* only uses numbers
   from your memory and otherwise leaves a gap like `[X%]` for you to fill in.
 - **Applications.** In the **Applications** tab, add a job (company, role, the

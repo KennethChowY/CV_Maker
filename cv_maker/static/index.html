@@ -105,6 +105,7 @@
           <select id="version-select" class="version-select" aria-label="Which CV"></select>
           <span id="edit-status" class="edit-status">Click anywhere on the CV to edit it.</span>
           <div class="spacer"></div>
+          <button id="discard" title="Go back to the CV as it was last generated" hidden>Undo my edits</button>
           <button id="learn" title="Update the memory with facts and wording from your manual edits" disabled>Save edits to memory</button>
           <button id="docx" title="Download as a Word document">Word</button>
           <button id="pdf" class="primary">Download PDF</button>
@@ -134,6 +135,7 @@
           <div class="paper-frame">
             <article id="cv" class="cv paper" contenteditable="true" spellcheck="true"></article>
             <div id="page-guides" class="page-guides" aria-hidden="true"></div>
+            <button id="improve-chip" class="improve-chip" type="button" title="Improve this bullet with AI" aria-label="Improve this bullet" hidden>✨</button>
             <div id="improve-pop" class="improve-pop" hidden>
               <div class="improve-actions">
                 <span class="improve-label">Improve this bullet:</span>
@@ -208,6 +210,7 @@
         <div class="toolbar">
           <span class="hint">Everything the app remembers about you. The CV is chosen from this.</span>
           <div class="spacer"></div>
+          <button id="backup" title="Download all your data (except your API key) as a zip file">Back up</button>
           <button id="toggle-json">Edit as JSON</button>
         </div>
         <div id="memory-view" class="memory-view"></div>

@@ -113,6 +113,7 @@ function setEditStatus(mode) {
   el.textContent = labels[mode];
   el.classList.toggle("dirty", mode !== "clean");
   $("learn").disabled = mode !== "edited" || !state?.ai_enabled;
+  $("discard").hidden = mode !== "edited";
 }
 
 function applyPageSize(size) {
@@ -861,7 +862,16 @@ function runChecks() {
       body.append(snips);
     } else if (c.extra?.lacking) {
       const chips = el("div", "chips");
-      c.extra.lacking.forEach((w) => chips.append(el("span", "chip", w.label)));
+      c.extra.lacking.forEach((w) => {
+        const chip = button(w.label, "chip missing", () => {
+          const input = $("input");
+          input.value = `${input.value ? `${input.value}\n` : ""}I have experience with ${w.label}: `;
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+          showNotice(`Describe where you've used ${w.label}, then click 'Add to memory'. Only add it if it's true.`);
+        }, `Add ${w.label} to your memory, if you have it`);
+        chips.append(chip);
+      });
       c.extra.have.forEach((w) => chips.append(el("span", "chip have", `✓ ${w.label}`)));
       body.append(chips);
     }
@@ -1308,6 +1318,15 @@ $("cv").addEventListener("paste", (e) => {
   document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
 });
 $("learn").addEventListener("click", learnFromEdits);
+$("discard").addEventListener("click", async () => {
+  if (!confirm("Undo all your edits to this CV and go back to the last generated version?")) return;
+  await savingEdits;
+  await withBusy("Undoing your edits…", async () => {
+    render(await api("POST", "/api/cv/reset"));
+    showNotice("");
+  });
+});
+$("backup").addEventListener("click", () => downloadFile("/api/export/backup.zip", "Packing your data…"));
 $("pdf").addEventListener("click", downloadPdf);
 $("docx").addEventListener("click", () => downloadFile("/api/export/cv.docx", "Making your Word document…"));
 $("undo").addEventListener("click", undo);

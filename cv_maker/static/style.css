@@ -292,3 +292,11 @@ button.danger { color: var(--danger); }
 .key-status { flex-wrap: wrap; align-items: flex-end; }
 .key-model { flex: 1; min-width: 0; }
 .key-model select { width: 100%; }
+
+.improve-chip { position: absolute; z-index: 5; width: 28px; height: 28px; padding: 0; font-size: 14px; border-radius: 999px;
+  border: 1px solid #e4c96a; background: #fff8e1; color: #6b4f00; box-shadow: 0 2px 6px rgba(16, 24, 40, 0.12); white-space: nowrap; }
+.improve-chip:hover { background: #ffefbf; }
+.chip.missing { cursor: pointer; }
+.chip.missing:hover { border-color: var(--accent); color: var(--accent); }
+button.chip { font: inherit; font-size: 12px; }
+@media print { .improve-chip { display: none !important; } }

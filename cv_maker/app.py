@@ -251,6 +251,33 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         store.save_cv_edits(clean_html(html), store.active_version())
         return state()
 
+    @app.post("/api/cv/reset")
+    def discard_cv_edits():
+        """Go back to the CV as it was last generated, dropping hand edits."""
+        vid = store.active_version()
+        cv = store.load_cv(vid)
+        if not cv:
+            return error("There's no generated CV to go back to.")
+        store.save_cv_html(render_cv(cv, *layout()), vid)
+        store.mark_cv_edits_learned(vid)
+        return state()
+
+    @app.get("/api/export/backup.zip")
+    def export_backup():
+        """Everything in the data folder except the API key, as one zip file."""
+        import io
+        import zipfile
+        from datetime import date
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
+            for path in sorted(store.dir.rglob("*")):
+                rel = path.relative_to(store.dir)
+                if path.is_file() and path.name not in ("secrets.json",) and not path.name.endswith(".tmp"):
+                    z.write(path, f"data/{rel.as_posix()}")
+        return Response(buffer.getvalue(), mimetype="application/zip",
+                        headers={"Content-Disposition": attachment(f"CV Maker backup {date.today().isoformat()}.zip")})
+
     @app.post("/api/cv/layout")
     def save_layout():
         body = request.get_json(silent=True) or {}
