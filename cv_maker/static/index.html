@@ -25,6 +25,18 @@
         <h2>AI model</h2>
         <select id="model-select" aria-label="AI model"></select>
         <p id="model-note" class="hint model-note"></p>
+        <form id="key-form" class="key-form" hidden>
+          <label for="key-input" class="hint">Paste your Anthropic API key to use Claude. It's checked with Anthropic, then kept only in this app's data folder on your computer.</label>
+          <div class="row">
+            <input id="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…">
+            <button id="key-save" class="primary" type="submit">Save</button>
+          </div>
+          <p class="hint">Get one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Pay-as-you-go; typically a few cents per update.</p>
+        </form>
+        <div id="key-status" class="key-status" hidden>
+          <span id="key-status-text"></span>
+          <button id="key-remove" type="button" class="small">Remove key</button>
+        </div>
         <div id="model-download" class="model-download" hidden>
           <button id="download-btn" class="primary wide">Download</button>
           <div id="download-progress" class="progress" hidden><div class="progress-bar"></div></div>

@@ -11,7 +11,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 from pydantic import ValidationError
 
 from .ai import AIError, Attachment
-from .models import NO_AI_MESSAGE, ModelManager, build_ai, credentials_configured, default_choice
+from .models import NO_AI_MESSAGE, ModelManager, build_ai, check_api_key, credentials_configured, default_choice
 from .render import basic_cv, render_cv, section_list, tidy_cv
 from .schema import Memory
 from .store import Store
@@ -56,6 +56,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     otherwise the model is picked on the page, defaulting to `backend` / CV_MAKER_AI."""
     app = Flask(__name__, static_folder=None)
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
+    app.config["VERIFY_KEY"] = check_api_key
     store = Store(data_dir or os.environ.get("CV_MAKER_DATA", "data"))
     models = ModelManager(store, fixed=ai, pinned=True) if ai is not _UNSET else ModelManager(store, backend=backend)
 
@@ -127,6 +128,16 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
     def choose_model():
         body = request.get_json(silent=True) or {}
         models.choose(body.get("backend", ""), body.get("model", ""))
+        return state()
+
+    @app.post("/api/models/key")
+    def save_key():
+        models.save_key((request.get_json(silent=True) or {}).get("key", ""), verify=app.config["VERIFY_KEY"])
+        return state()
+
+    @app.delete("/api/models/key")
+    def remove_key():
+        models.remove_key()
         return state()
 
     @app.post("/api/models/download")

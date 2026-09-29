@@ -895,10 +895,8 @@ function renderModels(next) {
       free.append(opt);
     }
     const paid = document.createElement("optgroup");
-    paid.label = "Paid, best quality";
-    const claude = new Option(next.claude_available ? "Claude" : "Claude (needs an API key)", modelValue("claude"));
-    claude.disabled = !next.claude_available;
-    paid.append(claude);
+    paid.label = "Best quality (paid, needs an API key)";
+    paid.append(new Option(next.claude_available ? "Claude" : "Claude: add your API key", modelValue("claude")));
     const none = new Option("No AI (plain layout)", modelValue("none"));
     sel.replaceChildren(free, paid, none);
     sel.value = pendingModel
@@ -920,7 +918,17 @@ function updateModelNote() {
   const note = $("model-note");
   let text = "";
   let cls = "";
-  if (backend === "claude") {
+  const key = catalog.api_key;
+  const wantsClaude = backend === "claude";
+  $("key-form").hidden = !wantsClaude || key.set;
+  $("key-status").hidden = !wantsClaude || !key.set;
+  $("key-status-text").textContent = key.source === "environment"
+    ? "Using the key from ANTHROPIC_API_KEY."
+    : `Key saved (${key.hint}).`;
+  $("key-remove").hidden = key.source !== "saved";
+  if (wantsClaude && !key.set) {
+    text = "The best writing and fastest updates.";
+  } else if (wantsClaude) {
     [text, cls] = ["Fast and the best writing. Costs a few cents per update.", "ok"];
   } else if (backend === "none") {
     text = "Your CV is laid out straight from memory, without AI wording.";
@@ -951,6 +959,11 @@ function updateModelNote() {
 
 async function onModelChange() {
   const { backend, model, local } = selected();
+  if (backend === "claude" && !catalog.api_key.set) {
+    updateModelNote();  // show the key box; switch once a key is saved
+    $("key-input").focus();
+    return;
+  }
   if (local && !local.installed) {
     pendingModel = model;  // switch to it once it's downloaded
     updateModelNote();
@@ -986,6 +999,28 @@ async function downloadModel() {
     const { local: now } = selected();
     if (now?.installed && now.name === pendingModel) onModelChange();
   }, 1000);
+}
+
+async function saveKey(e) {
+  e.preventDefault();
+  const key = $("key-input").value.trim();
+  if (!key) { $("key-input").focus(); return; }
+  await withBusy("Checking your key with Anthropic…", async () => {
+    render(await api("POST", "/api/models/key", { key }));
+    $("key-input").value = "";
+    showNotice("");
+    await loadModels();
+  });
+}
+
+async function removeKey() {
+  if (!confirm("Remove the saved API key from this computer?")) return;
+  try {
+    render(await api("DELETE", "/api/models/key"));
+  } catch (err) {
+    showNotice(err.message, true);
+  }
+  loadModels();
 }
 
 // ---------- Wiring ----------
@@ -1038,6 +1073,8 @@ $("json-save").addEventListener("click", async () => {
 
 $("model-select").addEventListener("change", onModelChange);
 $("download-btn").addEventListener("click", downloadModel);
+$("key-form").addEventListener("submit", saveKey);
+$("key-remove").addEventListener("click", removeKey);
 window.addEventListener("focus", () => { if (!downloadPoll) loadModels(); });
 
 api("GET", "/api/state").then(render).catch((err) => showNotice(err.message, true));

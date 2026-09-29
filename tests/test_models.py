@@ -75,3 +75,42 @@ def test_ollama_not_running_is_reported(monkeypatch, tmp_path):
     client = create_app(tmp_path / "data", backend="ollama").test_client()
     assert client.get("/api/models").get_json()["ollama_running"] is False
     assert "Ollama isn't running" in client.get("/api/state").get_json()["ai_status"]["message"]
+
+
+def test_api_key_is_saved_privately_and_never_sent_to_the_page(fake, tmp_path):
+    app = create_app(tmp_path / "data")
+    checked = []
+    app.config["VERIFY_KEY"] = checked.append
+    client = app.test_client()
+    key = "sk-ant-api03-" + "x" * 40 + "WXYZ"
+
+    assert client.post("/api/models/key", json={"key": "not-a-key"}).status_code >= 400
+    state = client.post("/api/models/key", json={"key": key})
+    assert state.status_code == 200 and checked == [key]
+    assert key not in state.get_data(as_text=True)
+    assert state.get_json()["ai_status"]["label"].startswith("Claude")
+
+    cat = client.get("/api/models")
+    assert key not in cat.get_data(as_text=True)
+    assert cat.get_json()["api_key"] == {"set": True, "source": "saved", "hint": "…WXYZ"}
+    assert cat.get_json()["choice"]["backend"] == "claude"
+    secrets = tmp_path / "data" / "secrets.json"
+    assert oct(secrets.stat().st_mode & 0o777) == "0o600"
+
+    client.delete("/api/models/key")
+    assert not secrets.exists()
+    cat = client.get("/api/models").get_json()
+    assert cat["api_key"]["set"] is False and cat["choice"]["backend"] == "ollama"
+
+
+def test_rejected_key_is_not_saved(fake, tmp_path):
+    from cv_maker.ai import AIError
+
+    def reject(key):
+        raise AIError("Anthropic didn't accept that key.")
+
+    app = create_app(tmp_path / "data")
+    app.config["VERIFY_KEY"] = reject
+    res = app.test_client().post("/api/models/key", json={"key": "sk-ant-api03-" + "y" * 40})
+    assert res.status_code >= 400 and "didn't accept" in res.get_json()["error"]
+    assert not (tmp_path / "data" / "secrets.json").exists()

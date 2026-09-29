@@ -231,3 +231,11 @@ button.danger { color: var(--danger); }
   padding: 0 6px; border-radius: 4px; font-family: system-ui, sans-serif; }
 @media print { .design-bar, .check-panel, .page-guides { display: none !important; } }
 @media print { .paper-frame { width: auto; margin: 0; } }
+
+/* API key */
+.key-form { margin-top: 8px; }
+.key-form .hint { margin: 0 0 6px; display: block; }
+.key-form .row { margin-top: 0; }
+.key-form input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font-family: ui-monospace, monospace; font-size: 12.5px; }
+.key-form .hint + .row + .hint { margin-top: 6px; }
+.key-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 12.5px; color: var(--muted); }

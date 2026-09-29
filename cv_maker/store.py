@@ -8,11 +8,13 @@ Layout of the data directory:
     cv.json              last generated CV (structured)
     cv.html              current CV body, including any manual edits
     cv_meta.json         when/for what the CV was generated, whether it was hand-edited
+    secrets.json         optional Claude API key, readable only by you
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +59,7 @@ class Store:
         self.cv_html_path = self.dir / "cv.html"
         self.cv_meta_path = self.dir / "cv_meta.json"
         self.settings_path = self.dir / "settings.json"
+        self.secrets_path = self.dir / "secrets.json"
 
     # ---- memory -------------------------------------------------------
 
@@ -116,6 +119,24 @@ class Store:
         merged.update({k: v for k, v in settings.items() if k in merged})
         _write_atomic(self.settings_path, json.dumps(merged, indent=2))
         return merged
+
+    # ---- API key ------------------------------------------------------
+
+    def load_api_key(self) -> str:
+        if not self.secrets_path.exists():
+            return ""
+        return json.loads(self.secrets_path.read_text(encoding="utf-8")).get("anthropic_api_key", "")
+
+    def save_api_key(self, key: str | None) -> None:
+        if not key:
+            self.secrets_path.unlink(missing_ok=True)
+            return
+        tmp = self.secrets_path.with_suffix(".tmp")
+        # Create the file readable only by the current user before writing the key into it.
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"anthropic_api_key": key}, f)
+        tmp.replace(self.secrets_path)
 
     # ---- CV -----------------------------------------------------------
 
