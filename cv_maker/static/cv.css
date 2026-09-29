@@ -144,3 +144,10 @@ body.standalone .cv { max-width: 182mm; margin: 12mm auto; }
 .cv.t-ats .cv-entry-org, .cv.t-ats .cv-entry-loc { font-style: normal; color: #000; font-size: 1em; }
 .cv.t-ats .cv-entry-org:not(:empty) + .cv-entry-loc::before { content: ", "; }
 .cv.t-ats li::marker { color: #000; }
+
+/* ---- optional photo (shown only when switched on, and not for US/UK-style CVs) ---- */
+.cv-header.has-photo { display: flex; align-items: center; gap: 1.2em; text-align: left; }
+.cv-header.has-photo .cv-header-text { flex: 1; min-width: 0; }
+.cv-photo { width: 24mm; height: 30mm; object-fit: cover; border-radius: 3px; flex: 0 0 auto; order: 2; }
+.cv.t-classic .cv-header.has-photo .cv-contact { justify-content: flex-start; }
+.cv.t-ats .cv-photo { display: none; }

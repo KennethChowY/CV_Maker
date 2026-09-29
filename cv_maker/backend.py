@@ -34,6 +34,19 @@ from .schema import (
     SkillGroup,
 )
 from .writing import BulletSuggestions, CoverLetter, clean_suggestions, improve_prompt, letter_prompt
+from .assistant import (
+    Email,
+    InterviewPrep,
+    LinkedInProfile,
+    StrengthenQuestions,
+    TruthReport,
+    follow_up_prompt,
+    interview_prompt,
+    linkedin_prompt,
+    strengthen_prompt,
+    translate_prompt,
+    truth_prompt,
+)
 
 INGEST_SYSTEM = """\
 You keep a structured record ("memory") of a person's career, used to write their CV.
@@ -252,6 +265,28 @@ class ChatBackend:
     def write_letter(self, memory: Memory, target: str, company: str, role: str, tone: str) -> CoverLetter:
         return self._chat(*letter_prompt(_compact(memory), target, company, role, tone), CoverLetter)
 
+    # ---- helpers beyond the CV itself (prompts in assistant.py) -----------
+
+    def truth_check(self, memory: Memory, cv_text: str) -> TruthReport:
+        return self._chat(*truth_prompt(_compact(memory), cv_text), TruthReport)
+
+    def strengthen_questions(self, memory: Memory, target: str = "", count: int = 6) -> StrengthenQuestions:
+        return self._chat(*strengthen_prompt(_compact(memory), target, count), StrengthenQuestions)
+
+    def interview_prep(self, memory: Memory, target: str, company: str, role: str) -> InterviewPrep:
+        return self._chat(*interview_prompt(_compact(memory), target, company, role), InterviewPrep)
+
+    def follow_up_email(self, memory: Memory, company: str, role: str, days: int, notes: str = "") -> Email:
+        return self._chat(*follow_up_prompt(_compact(memory), company, role, days, notes), Email)
+
+    def linkedin(self, memory: Memory, target: str = "") -> LinkedInProfile:
+        return self._chat(*linkedin_prompt(_compact(memory), target), LinkedInProfile)
+
+    def translate_cv(self, cv: CVDocument, language: str) -> CVDocument:
+        translated = self._chat(*translate_prompt(cv.model_dump_json(indent=1), language), CVDocument)
+        translated.advice = cv.advice  # tips stay in English
+        return translated
+
     # ---- wording cache: only rewrite what changed -----------------------
 
     def _load_cache(self) -> dict:
@@ -269,13 +304,14 @@ class ChatBackend:
         tmp.write_text(json.dumps(cache), encoding="utf-8")
         tmp.replace(self.cache_path)
 
-    def build_cv(self, memory: Memory, target: str = "") -> CVDocument:
+    def build_cv(self, memory: Memory, target: str = "", conventions: str = "") -> CVDocument:
         """The app lays the CV out from memory; the model only improves the wording.
 
         Wording for entries that haven't changed since the last build (same entry, same
         target, same preferences, same model) is reused, so the model only writes new or
-        edited entries. That's most of the time saved on a slow computer."""
-        context = _digest(self.model, target, memory.preferences, memory.notes, CV_WORDING_SYSTEM)
+        edited entries. That's most of the time saved on a slow computer.
+        `conventions` are the country's CV habits (spelling, length, what to leave out)."""
+        context = _digest(self.model, target, conventions, memory.preferences, memory.notes, CV_WORDING_SYSTEM)
         entries = {x.id: x for section in (memory.experience, memory.education, memory.projects,
                                            memory.achievements) for x in section}
         entry_keys = {i: _digest(context, e.model_dump_json()) for i, e in entries.items()}
@@ -295,6 +331,8 @@ class ChatBackend:
                 f"Return `items` ONLY for these ids: {', '.join(to_write)}. The other entries are already written."
                 if to_write else "Every entry is already written: return an empty `items` list."
             )
+            if conventions.strip():
+                request += f"\n<conventions>\n{conventions.strip()}\n</conventions>"
             user = f"<memory>\n{_compact(memory)}\n</memory>\n\n{request}\n{scope}"
             wording = self._chat(CV_WORDING_SYSTEM.format(today=date.today().isoformat()), user, CVWording)
             for item in wording.items:

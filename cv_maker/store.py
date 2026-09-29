@@ -30,7 +30,8 @@ from .schema import CVDocument, Memory
 _SECTIONS_WITH_IDS = ("experience", "education", "projects", "achievements")
 GENERAL = "general"
 STATUSES = ("Draft", "Applied", "Interview", "Offer", "Rejected", "Withdrawn")
-_VERSION_FIELDS = ("company", "role", "name", "target", "link", "status", "applied", "notes")
+_VERSION_FIELDS = ("company", "role", "name", "target", "link", "status", "applied", "notes",
+                   "region", "language", "followed_up")
 
 
 def _now() -> str:
@@ -117,7 +118,8 @@ class Store:
         defaults = {"auto_rebuild": True, "target": "", "page_size": "A4", "ai_backend": "", "ai_model": "",
                     "active_version": GENERAL,
                     "section_order": [], "hidden_sections": [],
-                    "template": "classic", "accent": "#1f4e79", "fit_one_page": False}
+                    "template": "classic", "accent": "#1f4e79", "fit_one_page": False,
+                    "region": "", "language": "en", "show_photo": False, "backup_dir": ""}
         if self.settings_path.exists():
             defaults.update(json.loads(self.settings_path.read_text(encoding="utf-8")))
         return defaults
@@ -175,9 +177,12 @@ class Store:
 
     def version_info(self, vid: str = GENERAL) -> dict:
         if vid == GENERAL:
-            return {"id": GENERAL, "name": "General CV", "target": self.load_settings()["target"],
-                    "company": "", "role": "", "status": "", "applied": "", "link": "", "notes": ""}
-        return json.loads((self._slot(vid) / "info.json").read_text(encoding="utf-8"))
+            settings = self.load_settings()
+            return {"id": GENERAL, "name": "General CV", "target": settings["target"], "company": "", "role": "",
+                    "status": "", "applied": "", "link": "", "notes": "", "followed_up": "",
+                    "region": settings["region"], "language": settings["language"]}
+        info = json.loads((self._slot(vid) / "info.json").read_text(encoding="utf-8"))
+        return {"region": "", "language": "en", "followed_up": "", **info}
 
     def list_versions(self) -> list[dict]:
         if not self.versions_dir.exists():
@@ -186,7 +191,7 @@ class Store:
         return sorted(infos, key=lambda i: i.get("created", ""), reverse=True)
 
     def create_version(self, *, company: str = "", role: str = "", target: str = "", link: str = "",
-                       copy_from: str = GENERAL) -> dict:
+                       region: str = "", language: str = "en", copy_from: str = GENERAL) -> dict:
         slug = re.sub(r"[^a-z0-9]+", "-", f"{company} {role}".lower()).strip("-")[:40] or "application"
         vid = f"{slug}-{secrets.token_hex(3)}"
         slot = self.versions_dir / vid
@@ -199,6 +204,7 @@ class Store:
             "id": vid, "company": company.strip(), "role": role.strip(),
             "name": " – ".join(x for x in (role.strip(), company.strip()) if x) or "Application",
             "target": target.strip(), "link": link.strip(), "status": "Draft", "applied": "", "notes": "",
+            "region": region, "language": language, "followed_up": "",
             "created": _now(), "updated": _now(),
         }
         _write_atomic(slot / "info.json", json.dumps(info, indent=2))
@@ -206,8 +212,7 @@ class Store:
 
     def update_version(self, vid: str, fields: dict) -> dict:
         if vid == GENERAL:
-            if "target" in fields:
-                self.save_settings({"target": str(fields["target"])})
+            self.save_settings({k: str(fields[k]) for k in ("target", "region", "language") if k in fields})
             return self.version_info(GENERAL)
         info = self.version_info(vid)
         for key in _VERSION_FIELDS:
@@ -270,3 +275,15 @@ class Store:
 
     def save_letter(self, letter: dict, vid: str = GENERAL) -> None:
         _write_atomic(self._slot(vid) / "letter.json", json.dumps(letter, indent=2))
+
+    # ---- other saved documents (interview prep per version; LinkedIn text; photo) ----
+
+    def load_doc(self, name: str, vid: str | None = None) -> dict:
+        path = (self._slot(vid) if vid else self.dir) / f"{name}.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    def save_doc(self, name: str, data: dict, vid: str | None = None) -> None:
+        _write_atomic((self._slot(vid) if vid else self.dir) / f"{name}.json", json.dumps(data, indent=2))
+
+    def photo_path(self) -> Path | None:
+        return next((p for p in (self.dir / "photo.jpg", self.dir / "photo.png") if p.exists()), None)

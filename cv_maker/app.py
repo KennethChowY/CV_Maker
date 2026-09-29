@@ -32,13 +32,16 @@ from .models import (
     credentials_configured,
     default_choice,
 )
-from .render import basic_cv, render_cv, render_letter, section_list, tidy_cv
+from .assistant import LANGUAGES, REGIONS, basic_questions
+from .jobads import fetch_job_ad
+from .render import basic_cv, render_cv, render_letter, section_list, tidy_cv, with_photo
 from .schema import Memory
 from .store import GENERAL, STATUSES, Store
 from .writing import IMPROVE_MODES, LETTER_TONES
 
 STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_PHOTO_BYTES = 2 * 1024 * 1024
 TEMPLATES = ("classic", "modern", "minimal")
 EDIT_CONFLICT = (
     "Your CV has manual edits, so it wasn't rebuilt automatically. Use "
@@ -108,15 +111,57 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         settings = store.load_settings()
         return settings["section_order"], settings["hidden_sections"]
 
+    def photo(vid: str) -> str | None:
+        """The photo as a data: URI, if it's switched on and the CV's country expects one."""
+        import base64
+
+        path = store.photo_path()
+        region = store.version_info(vid)["region"]
+        if not (path and store.load_settings()["show_photo"] and REGIONS.get(region, REGIONS[""])["photo"]):
+            return None
+        kind = "png" if path.suffix == ".png" else "jpeg"
+        return f"data:image/{kind};base64,{base64.b64encode(path.read_bytes()).decode()}"
+
+    def render(cv, vid: str) -> str:
+        return render_cv(cv, *layout(), photo=photo(vid))
+
+    def translated(ai, cv, language: str, vid: str):
+        """Translate the CV, reusing the last translation while the English CV is unchanged."""
+        import hashlib
+
+        key = hashlib.sha256(f"{language}\n{cv.model_dump_json()}".encode()).hexdigest()[:24]
+        saved = store.load_doc("translation", vid)
+        if saved.get("key") == key:
+            return type(cv).model_validate(saved["cv"])
+        result = tidy_cv(ai.translate_cv(cv, language))
+        store.save_doc("translation", {"key": key, "cv": result.model_dump()}, vid)
+        return result
+
     def build(vid: str | None = None) -> list[str]:
         """Rebuild a version's CV (the one open on the page by default) for its job ad."""
         vid = vid or store.active_version()
-        target = store.version_info(vid)["target"]
+        info = store.version_info(vid)
         memory = store.load_memory()
         ai = models.current()
-        cv = tidy_cv(ai.build_cv(memory, target) if ai else basic_cv(memory))
-        store.save_cv(cv, render_cv(cv, *layout()), target, vid)
+        conventions = REGIONS.get(info["region"], REGIONS[""])["guidance"]
+        cv = tidy_cv(ai.build_cv(memory, info["target"], conventions) if ai else basic_cv(memory))
+        if ai and info["language"] in LANGUAGES and info["language"] != "en":
+            cv = translated(ai, cv, info["language"], vid)
+        store.save_cv(cv, render(cv, vid), info["target"], vid)
         return cv.advice
+
+    def refresh_photos() -> None:
+        """Put the photo in (or take it out of) every CV, keeping hand edits."""
+        for vid in [GENERAL] + [v["id"] for v in store.list_versions()]:
+            html = store.cv_html(vid)
+            if not html:
+                continue
+            updated = with_photo(html, photo(vid))
+            if updated != html:
+                if store.cv_meta(vid).get("edited"):
+                    store.save_cv_edits(updated, vid)
+                else:
+                    store.save_cv_html(updated, vid)
 
     def state(**extra) -> Response:
         vid = store.active_version()
@@ -138,6 +183,11 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
             "sections": section_list(cv, *layout()) if cv else [],
             "letter": store.load_letter(vid),
             "ai_enabled": ai is not None,
+            "regions": {k: {"name": v["name"], "photo": v["photo"]} for k, v in REGIONS.items()},
+            "languages": LANGUAGES,
+            "has_photo": store.photo_path() is not None,
+            "prep": store.load_doc("prep", vid) if vid != GENERAL else {},
+            "linkedin": store.load_doc("linkedin"),
             "ai_status": ai_status(ai),
         }
         payload.update(extra)
@@ -276,7 +326,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         cv = store.load_cv(vid)
         if not cv:
             return error("There's no generated CV to go back to.")
-        store.save_cv_html(render_cv(cv, *layout()), vid)
+        store.save_cv_html(render(cv, vid), vid)
         store.mark_cv_edits_learned(vid)
         return state()
 
@@ -308,7 +358,7 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         if cv and store.cv_meta(vid).get("edited") and isinstance(body.get("html"), str):
             store.save_cv_edits(clean_html(body["html"]), vid)  # keep hand edits; the page already moved the sections
         elif cv:
-            store.save_cv_html(render_cv(cv, *layout()), vid)
+            store.save_cv_html(render(cv, vid), vid)
         return state()
 
     @app.post("/api/cv/learn")
@@ -359,7 +409,16 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
             return error("Accent must be a colour like #1f4e79.")
         if "fit_one_page" in body:
             body["fit_one_page"] = bool(body["fit_one_page"])
+        if body.get("region", "") not in REGIONS or body.get("language", "en") not in LANGUAGES:
+            return error("Unknown country or language.")
+        if "backup_dir" in body:
+            body["backup_dir"] = str(body["backup_dir"]).strip()
+        photo_changed = "show_photo" in body and bool(body["show_photo"]) != store.load_settings()["show_photo"]
+        if "show_photo" in body:
+            body["show_photo"] = bool(body["show_photo"])
         store.save_settings(body)
+        if photo_changed or "region" in body:
+            refresh_photos()
         return state()
 
     # ---- AI writing help ------------------------------------------------
@@ -451,8 +510,11 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         company, role = str(body.get("company", "")).strip(), str(body.get("role", "")).strip()
         if not company and not role:
             return error("Add the company or the role.")
+        region, language = str(body.get("region", "")), str(body.get("language", "en"))
+        if region not in REGIONS or language not in LANGUAGES:
+            return error("Unknown country or language.")
         info = store.create_version(company=company, role=role, target=str(body.get("target", "")),
-                                    link=str(body.get("link", "")))
+                                    link=str(body.get("link", "")), region=region, language=language)
         store.save_settings({"active_version": info["id"]})
         try:
             build(info["id"])
@@ -467,7 +529,11 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         body = request.get_json(silent=True) or {}
         if "status" in body and body["status"] not in STATUSES:
             return error("Unknown status.")
+        if body.get("region", "") not in REGIONS or body.get("language", "en") not in LANGUAGES:
+            return error("Unknown country or language.")
         store.update_version(vid, body)
+        if "region" in body:
+            refresh_photos()
         return state()
 
     @app.delete("/api/versions/<vid>")
@@ -483,6 +549,108 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         if not store.has_version(vid):
             return error("That application no longer exists.", 404)
         store.save_settings({"active_version": vid})
+        return state()
+
+    # ---- helpers: truth check, strengthening, interview prep, follow-ups, LinkedIn ----
+
+    def need_ai():
+        ai = models.current()
+        if not ai:
+            raise AIError(NO_AI_MESSAGE)
+        return ai
+
+    @app.post("/api/truth-check")
+    def truth_check():
+        """Compare the CV on the page with the memory, and list claims the memory doesn't back up."""
+        ai = need_ai()
+        text = str((request.get_json(silent=True) or {}).get("text", "")).strip()
+        if not text:
+            return error("The CV is empty.")
+        report = ai.truth_check(store.load_memory(), text[:20000])
+        issues = [i.model_dump() for i in report.issues if i.quote.strip() or i.problem.strip()]
+        return jsonify({"issues": issues})
+
+    @app.post("/api/strengthen")
+    def strengthen():
+        """Questions whose answers would make the CV stronger (mostly: the numbers behind the work)."""
+        memory = store.load_memory()
+        ai = models.current()
+        target = store.version_info(store.active_version())["target"]
+        result = ai.strengthen_questions(memory, target) if ai else basic_questions(memory)
+        questions = [q.model_dump() for q in result.questions if q.question.strip()]
+        return jsonify({"questions": questions, "ai": ai is not None})
+
+    @app.post("/api/interview")
+    def interview():
+        vid = store.active_version()
+        if vid == GENERAL:
+            return error("Open an application first: interview prep is for a specific job.")
+        ai = need_ai()
+        info = store.version_info(vid)
+        prep = ai.interview_prep(store.load_memory(), info["target"], info["company"], info["role"])
+        if not prep.questions:
+            return error("The AI didn't come up with any questions. Try again.", 502)
+        store.save_doc("prep", {**prep.model_dump(), "generated_at": _now_iso()}, vid)
+        return state()
+
+    @app.post("/api/linkedin")
+    def linkedin():
+        ai = need_ai()
+        target = store.version_info(store.active_version())["target"]
+        profile = ai.linkedin(store.load_memory(), target)
+        store.save_doc("linkedin", {**profile.model_dump(), "generated_at": _now_iso()})
+        return state()
+
+    @app.post("/api/versions/<vid>/follow-up")
+    def follow_up(vid: str):
+        """Draft a polite 'any news?' email for an application that's gone quiet."""
+        from datetime import date
+
+        if vid == GENERAL or not store.has_version(vid):
+            return error("That application no longer exists.", 404)
+        ai = need_ai()
+        info = store.version_info(vid)
+        try:
+            days = (date.today() - date.fromisoformat(info["applied"][:10])).days
+        except ValueError:
+            days = 7
+        email = ai.follow_up_email(store.load_memory(), info["company"], info["role"], max(days, 1), info["notes"])
+        return jsonify({"subject": email.subject, "body": email.body})
+
+    @app.post("/api/job-ad")
+    def job_ad():
+        url = str((request.get_json(silent=True) or {}).get("url", ""))
+        return jsonify({"text": app.config["FETCH_JOB_AD"](url)})
+
+    app.config["FETCH_JOB_AD"] = fetch_job_ad
+
+    @app.post("/api/photo")
+    def upload_photo():
+        f = request.files.get("photo")
+        if not f:
+            return error("Choose a photo first.")
+        data = f.read(MAX_PHOTO_BYTES + 1)
+        if len(data) > MAX_PHOTO_BYTES:
+            return error("That photo is too big (the limit is 2 MB).")
+        if data.startswith(b"\xff\xd8\xff"):
+            ext = "jpg"
+        elif data.startswith(b"\x89PNG\r\n\x1a\n"):
+            ext = "png"
+        else:
+            return error("Use a JPG or PNG photo.")
+        for old in ("photo.jpg", "photo.png"):
+            (store.dir / old).unlink(missing_ok=True)
+        (store.dir / f"photo.{ext}").write_bytes(data)
+        store.save_settings({"show_photo": True})
+        refresh_photos()
+        return state()
+
+    @app.delete("/api/photo")
+    def delete_photo():
+        for old in ("photo.jpg", "photo.png"):
+            (store.dir / old).unlink(missing_ok=True)
+        store.save_settings({"show_photo": False})
+        refresh_photos()
         return state()
 
     # ---- downloads ---------------------------------------------------

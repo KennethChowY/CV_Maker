@@ -33,8 +33,9 @@ class FakeAI:
         return CoverLetter(paragraphs=[f"I'd like to join {company or 'your team'} as {role or 'an engineer'}.",
                                        "At Acme I built X for 3 teams."])
 
-    def build_cv(self, memory, target=""):
+    def build_cv(self, memory, target="", conventions=""):
         self.targets.append(target)
+        self.conventions = conventions
         return CVDocument(
             name=memory.profile.name or "Nobody",
             sections=[CVSection(heading="Experience", entries=[
@@ -42,6 +43,42 @@ class FakeAI:
             ])],
             advice=["Add numbers"],
         )
+
+
+    def truth_check(self, memory, cv_text):
+        from cv_maker.assistant import TruthIssue, TruthReport
+        self.checked = cv_text
+        return TruthReport(issues=[TruthIssue(quote="Led 40 people", problem="The memory says you led 4.",
+                                              suggestion="Led 4 people"), TruthIssue()])
+
+    def strengthen_questions(self, memory, target="", count=6):
+        from cv_maker.assistant import StrengthenQuestion, StrengthenQuestions
+        return StrengthenQuestions(questions=[StrengthenQuestion(about="Acme", question="How many users?"),
+                                              StrengthenQuestion(question=" ")])
+
+    def interview_prep(self, memory, target, company, role):
+        from cv_maker.assistant import InterviewPrep, InterviewQuestion
+        self.prep_args = (target, company, role)
+        return InterviewPrep(questions=[InterviewQuestion(question=f"Why {company}?", why="Always asked",
+                                                          answer=["Your mission", "My Acme work"])],
+                             ask_them=["What does success look like?"])
+
+    def follow_up_email(self, memory, company, role, days, notes=""):
+        from cv_maker.assistant import Email
+        self.follow_up_args = (company, role, days, notes)
+        return Email(subject=f"{role} application", body=f"Dear {company}, it's been {days} days.")
+
+    def linkedin(self, memory, target=""):
+        from cv_maker.assistant import LinkedInProfile, LinkedInRole
+        return LinkedInProfile(headline="Data scientist", about="I like data.",
+                               experience=[LinkedInRole(title="Engineer", company="Acme", description="Built X.")])
+
+    def translate_cv(self, cv, language):
+        self.translated_to = language
+        out = cv.model_copy(deep=True)
+        for section in out.sections:
+            section.heading = "工作經驗" if section.heading == "Experience" else section.heading
+        return out
 
 
 @pytest.fixture
@@ -226,7 +263,7 @@ def test_section_layout_is_saved_and_survives_rebuilds(client, ai):
         "profile": {"name": "Ada"}, "experience": [{"id": "x", "role": "Engineer"}],
         "skills": [{"category": "Languages", "skills": ["Python"]}],
     })
-    ai.build_cv = lambda memory, target="": CVDocument(name="Ada", sections=[
+    ai.build_cv = lambda memory, target="", conventions="": CVDocument(name="Ada", sections=[
         CVSection(heading="Experience", items=["job"]), CVSection(heading="Skills", items=["Python"]),
     ])
     client.post("/api/build", json={})

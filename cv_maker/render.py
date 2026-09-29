@@ -71,10 +71,23 @@ def render_letter(memory: Memory, letter, company: str = "", role: str = "") -> 
     )
 
 
-def render_cv(cv: CVDocument, order: list[str] = (), hidden: list[str] = ()) -> str:
-    """HTML for the CV. Hidden sections stay in the page (so they can be shown again) but aren't displayed."""
+def render_cv(cv: CVDocument, order: list[str] = (), hidden: list[str] = (), photo: str | None = None) -> str:
+    """HTML for the CV. Hidden sections stay in the page (so they can be shown again) but aren't displayed.
+    `photo` is a data: URI, so the image travels with the page into PDFs."""
     hidden_keys = {h.strip().lower() for h in hidden}
-    return _env.get_template("cv.html.j2").render(cv=order_sections(cv, list(order)), hidden=hidden_keys)
+    return _env.get_template("cv.html.j2").render(cv=order_sections(cv, list(order)), hidden=hidden_keys, photo=photo)
+
+
+_PHOTO_IMG = re.compile(r'\s*<img class="cv-photo"[^>]*>')
+
+
+def with_photo(html: str, photo: str | None) -> str:
+    """Add, swap or remove the photo in CV HTML, keeping any hand edits."""
+    html = _PHOTO_IMG.sub("", html).replace('class="cv-header has-photo"', 'class="cv-header"')
+    if photo and '<header class="cv-header"' in html:
+        html = html.replace('<header class="cv-header">',
+                            f'<header class="cv-header has-photo">\n  <img class="cv-photo" src="{escape(photo)}" alt="">', 1)
+    return html
 
 
 def section_list(cv: CVDocument, order: list[str] = (), hidden: list[str] = ()) -> list[dict]:

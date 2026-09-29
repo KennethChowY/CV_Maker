@@ -1,4 +1,6 @@
-<header class="cv-header">
+<header class="cv-header{% if photo %} has-photo{% endif %}">
+  {% if photo %}<img class="cv-photo" src="{{ photo }}" alt="">{% endif %}
+  <div class="cv-header-text">
   <h1 class="cv-name">{{ cv.name }}</h1>
   {% if cv.headline %}<p class="cv-headline">{{ cv.headline | mark }}</p>{% endif %}
   {% if cv.contact or cv.links %}
@@ -7,6 +9,7 @@
     {% for l in cv.links %}<span><a href="{{ l.url if '://' in l.url or l.url.startswith('mailto:') else 'https://' ~ l.url }}">{{ l.url | replace('https://', '') | replace('http://', '') }}</a></span>{% endfor %}
   </p>
   {% endif %}
+  </div>
 </header>
 {% if cv.summary %}
 <section class="cv-section" data-section="summary"{% if "summary" in hidden %} hidden{% endif %}>

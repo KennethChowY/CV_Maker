@@ -24,7 +24,8 @@ from .backend import (
     pdf_to_text,
 )
 from .common import AIError, Attachment
-from .schema import BaseModel, IngestResult, Memory
+from .assistant import Email, InterviewPrep, LinkedInProfile, StrengthenQuestions, TruthReport
+from .schema import BaseModel, CVDocument, IngestResult, Memory
 from .writing import BulletSuggestions, CoverLetter
 
 __all__ = ["AIError", "Attachment", "ClaudeAI", "MODEL"]
@@ -32,7 +33,9 @@ __all__ = ["AIError", "Attachment", "ClaudeAI", "MODEL"]
 MODEL = os.environ.get("CV_MAKER_MODEL", "claude-opus-5-5")
 
 # How hard the model should think for each kind of request.
-EFFORT = {MemoryUpdate: "medium", CVWording: "high", BulletSuggestions: "low", CoverLetter: "medium"}
+EFFORT = {MemoryUpdate: "medium", CVWording: "high", BulletSuggestions: "low", CoverLetter: "medium",
+          TruthReport: "high", StrengthenQuestions: "low", InterviewPrep: "medium", Email: "low",
+          LinkedInProfile: "medium", CVDocument: "medium"}
 
 
 class ClaudeAI(ChatBackend):
