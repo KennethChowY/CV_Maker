@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from urllib.parse import quote
 
 from .ai import AIError, Attachment
-from .export import ExportError, html_to_docx, html_to_pdf, letter_to_docx, page_document
+from .export import ExportError, docx_to_text, html_to_docx, html_to_pdf, letter_to_docx, page_document
 from .models import (
     NO_AI_MESSAGE,
     ModelManager,
@@ -217,18 +217,24 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
         if not ai:
             return error(NO_AI_MESSAGE)
         text = (request.form.get("text") or "").strip()
-        attachments = [
-            Attachment(f.filename or "upload", f.mimetype or "text/plain", f.read())
-            for f in request.files.getlist("files")
-            if f.filename
-        ]
+        attachments = []
+        for f in request.files.getlist("files"):
+            if not f.filename:
+                continue
+            name, data = f.filename, f.read()
+            if name.lower().endswith(".docx"):
+                try:  # Word files are turned into text here, so every model can read them
+                    attachments.append(Attachment(name, "text/plain", docx_to_text(data).encode()))
+                except ExportError as e:
+                    return error(str(e))
+            elif f.mimetype == "application/pdf" or name.lower().endswith(".pdf"):
+                attachments.append(Attachment(name, "application/pdf", data))
+            elif (f.mimetype or "").startswith("text/") or name.lower().endswith((".md", ".txt", ".json")):
+                attachments.append(Attachment(name, "text/plain", data))
+            else:
+                return error(f"{name}: upload a PDF, Word (.docx) or text file.")
         if not text and not attachments:
             return error("Type something or attach a file first.")
-        for a in attachments:
-            if a.media_type != "application/pdf" and not (
-                a.media_type.startswith("text/") or a.filename.lower().endswith((".md", ".txt", ".json"))
-            ):
-                return error(f"{a.filename}: upload a PDF or a text file. Save Word documents as PDF first.")
 
         result = ai.ingest(store.load_memory(), text, attachments)
         label = text or ", ".join(a.filename for a in attachments)

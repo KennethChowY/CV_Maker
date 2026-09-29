@@ -81,10 +81,31 @@ def test_file_upload_is_passed_to_ai(client, ai):
 
 
 def test_unsupported_upload_is_rejected(client):
-    data = {"files": (io.BytesIO(b"PK..."), "cv.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    data = {"files": (io.BytesIO(b"PK..."), "cv.pages", "application/octet-stream")}
     res = client.post("/api/ingest", data=data, content_type="multipart/form-data")
-    assert res.status_code == 400
-    assert "PDF" in res.get_json()["error"]
+    assert res.status_code == 400 and "PDF, Word" in res.get_json()["error"]
+    data = {"files": (io.BytesIO(b"not really word"), "cv.docx", "application/octet-stream")}
+    res = client.post("/api/ingest", data=data, content_type="multipart/form-data")
+    assert res.status_code == 400 and "Word file" in res.get_json()["error"]
+
+
+def test_word_cv_is_read_as_text(client, ai):
+    import docx
+    doc = docx.Document()
+    doc.add_paragraph("Ada Lovelace")
+    table = doc.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "Analyst, Acme"
+    table.rows[0].cells[1].text = "2021 – 2024"
+    buf = io.BytesIO()
+    doc.save(buf)
+    seen = []
+    original = ai.ingest
+    ai.ingest = lambda memory, text, attachments=None: seen.extend(attachments or []) or original(memory, text, attachments)
+    data = {"files": (io.BytesIO(buf.getvalue()), "My CV.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+    assert client.post("/api/ingest", data=data, content_type="multipart/form-data").status_code == 200
+    assert seen[0].media_type == "text/plain"
+    text = seen[0].data.decode()
+    assert "Ada Lovelace" in text and "Analyst, Acme | 2021 – 2024" in text
 
 
 def test_empty_input_is_rejected(client):

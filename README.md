@@ -87,7 +87,8 @@ It can use either:
   from your memory and that job's ad (Professional, Warm or Concise). Edit it on
   the page; each application keeps its own.
 - **Aim the CV.** Paste a job ad or describe a role and the CV is tailored to it.
-- **Import.** Attach an existing CV (PDF or text) to fill the memory in one go.
+- **Import.** Attach an existing CV (PDF, Word or text), or your LinkedIn profile
+  saved as PDF, to fill the memory in one go.
 - **Preferences.** Say things like *"always use UK spelling"* or *"keep it to
   one page"*. They're remembered and applied to every rebuild.
 - **Downloads.** **Download PDF** saves a PDF straight away, made by the Chrome,
@@ -145,7 +146,7 @@ What to expect:
   changed and the app merges it, so an update can't accidentally wipe existing
   entries.
 - **PDFs.** Attached PDFs are converted to text first, so scanned (image-only)
-  PDFs won't work; paste the text instead.
+  PDFs won't work; paste the text instead. Word files work with every model.
 
 ### Option B: your own API key (paid, best quality)
 

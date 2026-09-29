@@ -60,7 +60,7 @@
         <textarea id="input" rows="6" placeholder="e.g. In March I was promoted to Senior Engineer at Acme. I led the move to Kubernetes, which cut hosting costs by 30%."></textarea>
         <div class="row">
           <label class="file-btn">
-            <input id="files" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain" multiple>
+            <input id="files" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" multiple>
             <span>Attach CV or file</span>
           </label>
           <span id="file-names" class="file-names"></span>
@@ -154,9 +154,16 @@
             </div>
           </div>
         </div>
-        <div id="cv-empty" class="empty" hidden>
-          <h3>No CV yet</h3>
-          <p>Start by telling me about yourself on the left, or attach your current CV. Your memory builds up over time and the CV is rewritten from it.</p>
+        <div id="cv-empty" class="empty onboarding" hidden>
+          <h3>Let's make your CV</h3>
+          <p>Three steps. After that, just tell the app whenever something changes and it keeps your CV up to date.</p>
+          <ol class="steps">
+            <li><strong>Choose an AI model</strong> in the box at the top left: a free one that runs on this computer, or your own API key for the best writing.</li>
+            <li><strong>Bring in what you have:</strong> attach your current CV (PDF or Word) or a LinkedIn profile saved as PDF, or just describe your jobs, studies and projects in your own words.
+              <div class="row center"><button type="button" id="start-import" class="primary">Attach my CV</button><button type="button" id="start-type">Type it instead</button></div>
+            </li>
+            <li><strong>Check the Memory tab</strong> and fix anything that's wrong, then pick a template and download your PDF.</li>
+          </ol>
         </div>
       </section>
 

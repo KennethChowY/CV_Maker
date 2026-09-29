@@ -266,3 +266,20 @@ def letter_to_docx(body: str, *, template: str, accent: str, page_size: str) -> 
     buffer = io.BytesIO()
     doc.save(buffer)
     return buffer.getvalue()
+
+
+def docx_to_text(data: bytes) -> str:
+    """The text of a Word document, including tables (many CV templates are laid out in tables)."""
+    try:
+        doc = Document(io.BytesIO(data))
+    except Exception as e:  # python-docx raises several error types for files that aren't .docx
+        raise ExportError(f"Couldn't read that Word file: {e}") from e
+    lines = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            cells = []
+            for cell in row.cells:
+                if cell.text.strip() and cell.text not in cells:  # merged cells repeat their text
+                    cells.append(cell.text)
+            lines.append(" | ".join(cells))
+    return "\n".join(line for line in lines if line.strip())

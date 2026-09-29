@@ -1345,6 +1345,13 @@ $("cv").addEventListener("paste", (e) => {
   document.execCommand("insertText", false, e.clipboardData.getData("text/plain"));
 });
 $("learn").addEventListener("click", learnFromEdits);
+$("start-import").addEventListener("click", () => $("files").click());
+$("start-type").addEventListener("click", () => {
+  $("input").value ||= "My name is … I studied … at … from … to … I worked at … as … where I …";
+  $("input").focus();
+  $("input").select();
+});
+$("files").addEventListener("change", () => { if ($("files").files.length && !state.cv_html) addToMemory(); });
 $("discard").addEventListener("click", async () => {
   if (!confirm("Undo all your edits to this CV and go back to the last generated version?")) return;
   await flushEdits();

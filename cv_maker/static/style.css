@@ -300,3 +300,10 @@ button.danger { color: var(--danger); }
 .chip.missing:hover { border-color: var(--accent); color: var(--accent); }
 button.chip { font: inherit; font-size: 12px; }
 @media print { .improve-chip { display: none !important; } }
+
+/* First-run guide */
+.onboarding { text-align: left; max-width: 620px; margin: 20px auto; padding: 28px 32px; }
+.onboarding h3 { margin-top: 0; font-size: 20px; }
+.onboarding .steps { padding-left: 20px; display: grid; gap: 14px; color: var(--ink); }
+.onboarding .steps li { line-height: 1.5; }
+.row.center { justify-content: flex-start; margin-top: 10px; }
