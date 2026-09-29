@@ -22,6 +22,7 @@ from pathlib import Path
 from pydantic import Field, ValidationError
 
 from .ai import AIError, Attachment
+from .writing import BulletSuggestions, CoverLetter, clean_suggestions, improve_prompt, letter_prompt
 from .render import assemble_cv
 from .schema import (
     Achievement,
@@ -358,6 +359,14 @@ class OllamaAI:
             changes=update.changes or ["Updated memory"],
             questions=update.questions[:3],
         )
+
+    def improve_bullet(self, memory: Memory, bullet: str, mode: str, target: str = "",
+                       instruction: str = "") -> list[str]:
+        system, user = improve_prompt(_compact(memory), bullet, mode, target, instruction)
+        return clean_suggestions(self._chat(system, user, BulletSuggestions), bullet)
+
+    def write_letter(self, memory: Memory, target: str, company: str, role: str, tone: str) -> CoverLetter:
+        return self._chat(*letter_prompt(_compact(memory), target, company, role, tone), CoverLetter)
 
     # ---- wording cache: only rewrite what changed -----------------------
 

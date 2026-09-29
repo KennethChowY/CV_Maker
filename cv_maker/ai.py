@@ -10,6 +10,14 @@ from datetime import date
 import anthropic
 
 from .schema import CVDocument, IngestResult, Memory
+from .writing import (
+    BulletSuggestions,
+    CoverLetter,
+    clean_suggestions,
+    improve_prompt,
+    letter_prompt,
+    memory_for_prompt,
+)
 
 MODEL = os.environ.get("CV_MAKER_MODEL", "claude-opus-5-5")
 
@@ -178,3 +186,15 @@ class ClaudeAI:
             output_format=CVDocument,
             effort="high",
         )
+
+    def improve_bullet(self, memory: Memory, bullet: str, mode: str, target: str = "",
+                       instruction: str = "") -> list[str]:
+        system, user = improve_prompt(memory_for_prompt(memory), bullet, mode, target, instruction)
+        result = self._parse(system=system, content=[{"type": "text", "text": user}],
+                             output_format=BulletSuggestions, effort="low")
+        return clean_suggestions(result, bullet)
+
+    def write_letter(self, memory: Memory, target: str, company: str, role: str, tone: str) -> CoverLetter:
+        system, user = letter_prompt(memory_for_prompt(memory), target, company, role, tone)
+        return self._parse(system=system, content=[{"type": "text", "text": user}],
+                           output_format=CoverLetter, effort="medium")

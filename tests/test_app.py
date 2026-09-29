@@ -23,6 +23,16 @@ class FakeAI:
         updated.experience.append(Experience(id="exp-new", role=text[:40] or "Imported", organization="Acme"))
         return IngestResult(memory=updated, changes=[f"Added {text[:20]}"], questions=["What was the impact?"])
 
+    def improve_bullet(self, memory, bullet, mode, target="", instruction=""):
+        self.improved = (bullet, mode, target, instruction)
+        return [f"{mode}: {bullet}", f"Led {bullet.lower()}", bullet]
+
+    def write_letter(self, memory, target, company, role, tone):
+        from cv_maker.writing import CoverLetter
+        self.letter_args = (target, company, role, tone)
+        return CoverLetter(paragraphs=[f"I'd like to join {company or 'your team'} as {role or 'an engineer'}.",
+                                       "At Acme I built X for 3 teams."])
+
     def build_cv(self, memory, target=""):
         self.targets.append(target)
         return CVDocument(
@@ -232,3 +242,23 @@ def test_design_settings_are_validated_and_used_on_the_standalone_page(client):
     client.post("/api/ingest", data={"text": "Engineer"})
     page = client.get("/cv.html").get_data(as_text=True)
     assert "class='cv t-modern'" in page and "--cv-accent:#0f6e6e" in page
+
+
+def test_improve_a_bullet(client, ai):
+    client.post("/api/versions", json={"company": "HSBC", "target": "Python role"})
+    res = client.post("/api/improve", json={"text": "Built a dashboard", "mode": "job"})
+    assert res.status_code == 200 and res.get_json()["suggestions"][0] == "job: Built a dashboard"
+    assert ai.improved == ("Built a dashboard", "job", "Python role", "")
+    assert client.post("/api/improve", json={"text": "", "mode": "stronger"}).status_code == 400
+    assert client.post("/api/improve", json={"text": "x", "mode": "rhyme"}).status_code == 400
+
+
+def test_improve_needs_an_ai(tmp_path):
+    client = create_app(tmp_path, ai=None).test_client()
+    assert client.post("/api/improve", json={"text": "Built X", "mode": "stronger"}).status_code == 400
+
+
+def test_suggestions_drop_duplicates_and_bullet_marks():
+    from cv_maker.writing import BulletSuggestions, clean_suggestions
+    out = clean_suggestions(BulletSuggestions(suggestions=["• Led X", "led x", "Built X", " - Shipped Y", "Z", "W"]), "Built X")
+    assert out == ["Led X", "Shipped Y", "Z"]

@@ -265,3 +265,21 @@ button.danger { color: var(--danger); }
 .status.Rejected, .status.Withdrawn { background: #f6e8e8; color: #8a1c2b; }
 .app-stats { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 700px) { .app-card .fields, .app-grid { grid-template-columns: 1fr; } }
+
+/* Improve-a-bullet popover */
+.improve-pop { position: absolute; z-index: 6; width: min(560px, 92%); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 10px 30px rgba(16, 24, 40, 0.16); padding: 8px; font-family: system-ui, sans-serif; font-size: 13px; }
+.improve-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.improve-label { color: var(--muted); font-size: 12px; margin-right: 2px; }
+.improve-actions button { padding: 4px 9px; font-size: 12.5px; }
+.improve-close { margin-left: auto; border: none !important; background: none; color: var(--muted); font-size: 16px !important; }
+.improve-ask { display: flex; gap: 6px; margin-top: 6px; }
+.improve-ask input { flex: 1; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+.improve-results { display: grid; gap: 4px; margin-top: 6px; }
+.improve-results:empty { display: none; }
+.improve-results .suggestion { text-align: left; border: 1px solid var(--line); background: #fbfcfe; border-radius: 8px; padding: 7px 9px; line-height: 1.4; }
+.improve-results .suggestion:hover { border-color: var(--accent); background: var(--accent-soft); }
+.improve-results .thinking { display: flex; align-items: center; gap: 8px; color: var(--muted); padding: 4px; }
+.improve-results .thinking .spinner { width: 14px; height: 14px; }
+.cv .cv-entry li.improving { background: #fff7e0; border-radius: 3px; }
+@media print { .improve-pop { display: none !important; } }

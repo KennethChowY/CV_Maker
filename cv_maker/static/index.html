@@ -125,6 +125,22 @@
           <div class="paper-frame">
             <article id="cv" class="cv paper" contenteditable="true" spellcheck="true"></article>
             <div id="page-guides" class="page-guides" aria-hidden="true"></div>
+            <div id="improve-pop" class="improve-pop" hidden>
+              <div class="improve-actions">
+                <span class="improve-label">Improve this bullet:</span>
+                <button type="button" data-mode="stronger">Stronger</button>
+                <button type="button" data-mode="number">Add a number</button>
+                <button type="button" data-mode="shorter">Shorter</button>
+                <button type="button" data-mode="job" id="improve-job">Match job ad</button>
+                <button type="button" data-mode="custom">Ask…</button>
+                <button type="button" class="improve-close" title="Close">×</button>
+              </div>
+              <form id="improve-ask" class="improve-ask" hidden>
+                <input id="improve-instruction" placeholder="e.g. mention it was used by the whole lab" autocomplete="off">
+                <button type="submit" class="primary">Go</button>
+              </form>
+              <div id="improve-results" class="improve-results"></div>
+            </div>
           </div>
         </div>
         <div id="cv-empty" class="empty" hidden>
@@ -187,5 +203,6 @@
   </div>
 
   <script src="/static/app.js"></script>
+  <script src="/static/assist.js"></script>
 </body>
 </html>

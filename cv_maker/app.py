@@ -18,6 +18,7 @@ from .models import NO_AI_MESSAGE, ModelManager, build_ai, check_api_key, creden
 from .render import basic_cv, render_cv, section_list, tidy_cv
 from .schema import Memory
 from .store import GENERAL, STATUSES, Store
+from .writing import IMPROVE_MODES, LETTER_TONES
 
 STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -273,6 +274,28 @@ def create_app(data_dir: str | Path | None = None, ai=_UNSET, backend: str | Non
             body["fit_one_page"] = bool(body["fit_one_page"])
         store.save_settings(body)
         return state()
+
+    # ---- AI writing help ------------------------------------------------
+
+    @app.post("/api/improve")
+    def improve():
+        ai = models.current()
+        if not ai:
+            return error(NO_AI_MESSAGE)
+        body = request.get_json(silent=True) or {}
+        text = str(body.get("text", "")).strip()
+        mode = str(body.get("mode", "stronger"))
+        if not text:
+            return error("Pick a bullet point first.")
+        if len(text) > 1000:
+            return error("That's too long for one bullet point.")
+        if mode not in IMPROVE_MODES:
+            return error("Unknown kind of improvement.")
+        target = store.version_info(store.active_version())["target"]
+        suggestions = ai.improve_bullet(store.load_memory(), text, mode, target, str(body.get("instruction", "")))
+        if not suggestions:
+            return error("The AI didn't come up with anything different. Try another option.", 502)
+        return jsonify({"suggestions": suggestions})
 
     # ---- job applications (each has its own tailored CV) -------------
 
