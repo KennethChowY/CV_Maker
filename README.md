@@ -56,11 +56,17 @@ It can use either:
 
 ## Setup
 
-Requires Python 3.10+.
+Requires Python 3.10+. Install the app's packages into a virtual environment
+(a private folder of packages just for this project):
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+Each time you open a new terminal, run `source .venv/bin/activate` again
+before starting the app. Your prompt shows `(.venv)` when it's active.
 
 ### Option A: free local model (Ollama)
 
